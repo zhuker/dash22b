@@ -259,6 +259,7 @@ fun PortraitGaugesContent(data: EngineData) {
                 value = data.rpm.toFloat(),
                 maxValue = 8000f,
                 label = "RPM",
+                format = "%.0f",
                 unit = "",
                 color = GaugeGreen,
                 modifier = Modifier.weight(1f).padding(8.dp)
@@ -267,6 +268,7 @@ fun PortraitGaugesContent(data: EngineData) {
                 value = data.speed.toFloat(),
                 maxValue = 300f,
                 label = "Speed",
+                format = "%.0f",
                 unit = "km/h",
                 color = GaugeRed,
                 modifier = Modifier.weight(1f).padding(8.dp)
@@ -382,6 +384,7 @@ fun GaugesContent(data: EngineData) {
                 value = data.rpm.toFloat(),
                 maxValue = 8000f,
                 label = "RPM",
+                format = "%.0f",
                 unit = "", // Unit is just RPM
                 color = GaugeGreen,
                 modifier = Modifier.weight(1f).padding(16.dp)
@@ -390,6 +393,7 @@ fun GaugesContent(data: EngineData) {
                 value = data.speed.toFloat(),
                 maxValue = 300f,
                 label = "Speed",
+                format = "%.0f",
                 unit = "km/h",
                 color = GaugeRed,
                 modifier = Modifier.weight(1f).padding(16.dp)

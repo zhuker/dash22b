@@ -27,6 +27,7 @@ fun CircularGauge(
     value: Float,
     minValue: Float = 0f,
     maxValue: Float = 100f,
+    format: String = "%.1f",
     label: String,
     unit: String,
     color: Color = GaugeGreen,
@@ -71,7 +72,7 @@ fun CircularGauge(
             modifier = Modifier.offset(y = (-4).dp) // Visual correction
         ) {
             Text(
-                text = String.format("%.1f", value).replace(".0", ""), // Integer if whole number
+                text = String.format(format, value),
                 style = MaterialTheme.typography.headlineMedium.copy(
                     fontWeight = FontWeight.Bold,
                     color = Color.White
