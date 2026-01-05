@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.Dash22b" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@color/black</item>
+    </style>
+    
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+</resources>
