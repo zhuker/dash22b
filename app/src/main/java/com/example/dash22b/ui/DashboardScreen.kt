@@ -181,7 +181,7 @@ fun BottomNavigationBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(80.dp)
+            .height(64.dp) // Reduced height
             .background(Color(0xFF1E1E1E)),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
@@ -218,14 +218,14 @@ fun NavItem(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .clickable(onClick = onClick)
-            .padding(8.dp)
+            .padding(4.dp) // Reduced padding
     ) {
         Box(
             modifier = Modifier
-                .size(48.dp)
+                .size(32.dp) // Reduced icon container size
                 .background(
                     if (isSelected) Purple40 else Color.Transparent,
-                    shape = RoundedCornerShape(24.dp)
+                    shape = RoundedCornerShape(16.dp)
                 ),
             contentAlignment = Alignment.Center
         ) {
@@ -239,7 +239,7 @@ fun NavItem(
             text = label,
             color = Color.White,
             style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(top = 4.dp)
+            modifier = Modifier.padding(top = 2.dp) // Reduced gap
         )
     }
 }
