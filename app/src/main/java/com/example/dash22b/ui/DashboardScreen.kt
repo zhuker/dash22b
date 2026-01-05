@@ -350,20 +350,33 @@ fun DynamicCircularGauge(
 ) {
     // Look up definition
     val def = ParameterRegistry.getDefinition(config.parameterName)
-    val value = data.values[config.parameterName] ?: 0f
+    val vwu = data.values[config.parameterName] ?: com.example.dash22b.data.ValueWithUnit(0f, "")
+    
+    // Heuristic or Default Target Unit
+    // If definition has a preferred unit, use it. Otherwise use the log unit.
+    var targetUnit = def?.unit ?: vwu.unit
+    
+    // Overrides for specific gauges if registry defaults aren't what we want for display
+    // e.g. defined as 'psi' but we want 'bar'
+    if (config.parameterName.contains("Boost") || config.parameterName.contains("Pressure")) {
+        targetUnit = "bar"
+    } else if (def?.unit == "F" || vwu.unit.equals("F", ignoreCase = true)) {
+        targetUnit = "C" // Always prefer C for display?
+    }
+
+    val displayValue = com.example.dash22b.data.UnitConverter.convert(vwu.value, vwu.unit, targetUnit)
     
     // Fallbacks if not found
     val label = def?.name ?: config.parameterName
-    val unit = def?.unit ?: ""
-    // Heuristic Min/Max from Def or Defaults
-    val min = 0f // Parse from def.minExpected in future
+    
+    // Heuristic Min/Max
+    val min = 0f 
     val max = if (def?.maxExpected?.contains("100") == true) 100f 
               else if (def?.name?.contains("RPM") == true) 8000f
-              else if (def?.name?.contains("Boost") == true) 2.5f
+              else if (def?.name?.contains("Boost") == true) 2.5f // bar
               else if (def?.name?.contains("Voltage") == true) 16f
-              else 100f // Default max
-              
-    // Color logic could also be dynamic? Keep defaults for now.
+              else 100f 
+
     val color = if (isBig) {
          if (config.id == 0) GaugeGreen else GaugeRed
     } else {
@@ -375,11 +388,11 @@ fun DynamicCircularGauge(
     }
 
     CircularGauge(
-        value = value,
+        value = displayValue,
         minValue = min,
         maxValue = max,
         label = label,
-        unit = unit,
+        unit = targetUnit,
         color = color,
         modifier = modifier,
         onLongClick = onLongClick
@@ -496,14 +509,23 @@ fun GaugesContent(
 @Composable
 fun GraphsContent(data: EngineData) {
      // A grid of graphs
+     // Helper to convert history
+     fun convertHist(history: List<Float>, fromUnit: String, toUnit: String): List<Float> {
+         return history.map { com.example.dash22b.data.UnitConverter.convert(it, fromUnit, toUnit) }
+     }
+     
+     fun convertVal(value: Float, fromUnit: String, toUnit: String): Float {
+         return com.example.dash22b.data.UnitConverter.convert(value, fromUnit, toUnit)
+     }
+
     Column(modifier = Modifier.fillMaxSize()) {
         // Row 1
         Row(modifier = Modifier.weight(1f)) {
              LineGraph(
-                dataPoints = data.rpmHistory,
+                dataPoints = data.rpmHistory, // RPM usually needs no conversion
                 label = "RPM",
                 unit = "", 
-                currentValue = data.rpm.toFloat(),
+                currentValue = data.rpm.value,
                 color = GaugeGreen,
                 modifier = Modifier.weight(1f).padding(4.dp)
             )
@@ -511,26 +533,28 @@ fun GraphsContent(data: EngineData) {
                 dataPoints = listOf(), // Spark Advance History TBD
                 label = "Spark Adv",
                 unit = "deg", 
-                currentValue = data.sparkLines,
+                currentValue = data.sparkLines.value,
                 color = GaugeTeal,
                 modifier = Modifier.weight(1f).padding(4.dp)
             )
+             val coolantUnit = "C"
              LineGraph(
                 dataPoints = listOf(), // Coolant History TBD
                 label = "Coolant",
-                unit = "°C", 
-                currentValue = data.coolantTemp.toFloat(),
+                unit = coolantUnit, 
+                currentValue = convertVal(data.coolantTemp.value, data.coolantTemp.unit, coolantUnit),
                 color = GaugeOrange,
                 modifier = Modifier.weight(1f).padding(4.dp)
             )
         }
         // Row 2
         Row(modifier = Modifier.weight(1f)) {
+            val boostUnit = "bar"
              LineGraph(
-                dataPoints = data.boostHistory,
+                dataPoints = convertHist(data.boostHistory, data.boost.unit, boostUnit),
                 label = "Boost",
-                unit = "bar", 
-                currentValue = data.boost,
+                unit = boostUnit, 
+                currentValue = convertVal(data.boost.value, data.boost.unit, boostUnit),
                 color = GaugeGreen,
                 modifier = Modifier.weight(1f).padding(4.dp)
             )
@@ -538,15 +562,16 @@ fun GraphsContent(data: EngineData) {
                 dataPoints = listOf(), // AFR History TBD
                 label = "AFR",
                 unit = "", 
-                currentValue = data.afr,
+                currentValue = data.afr.value,
                 color = GaugeTeal,
                 modifier = Modifier.weight(1f).padding(4.dp)
             )
+             val iatUnit = "C"
              LineGraph(
                 dataPoints = listOf(), // IAT History TBD
                 label = "IAT",
-                unit = "°C", 
-                currentValue = data.iat.toFloat(),
+                unit = iatUnit, 
+                currentValue = convertVal(data.iat.value, data.iat.unit, iatUnit),
                 color = GaugeOrange,
                 modifier = Modifier.weight(1f).padding(4.dp)
             )
@@ -557,7 +582,7 @@ fun GraphsContent(data: EngineData) {
                 dataPoints = listOf(), // Pulse History TBD
                 label = "Pulse Width",
                 unit = "ms", 
-                currentValue = data.pulseWidth,
+                currentValue = data.pulseWidth.value,
                 color = GaugeGreen,
                 modifier = Modifier.weight(1f).padding(4.dp)
             )
@@ -565,7 +590,7 @@ fun GraphsContent(data: EngineData) {
                 dataPoints = listOf(), // Duty History TBD
                 label = "Duty Cycle",
                 unit = "%", 
-                currentValue = data.dutyCycle,
+                currentValue = data.dutyCycle.value,
                 color = GaugeTeal,
                 modifier = Modifier.weight(1f).padding(4.dp)
             )
@@ -573,7 +598,7 @@ fun GraphsContent(data: EngineData) {
                 dataPoints = listOf(), // MAF History TBD
                 label = "MAF",
                 unit = "g/s", 
-                currentValue = data.maf,
+                currentValue = data.maf.value,
                 color = GaugeOrange,
                 modifier = Modifier.weight(1f).padding(4.dp)
             )

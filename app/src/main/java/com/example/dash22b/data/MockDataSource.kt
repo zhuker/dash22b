@@ -12,24 +12,32 @@ class MockDataSource {
         var currentData = EngineData()
         
         while (true) {
+            // Helper to update value
+            fun update(current: ValueWithUnit, delta: Float, min: Float, max: Float): ValueWithUnit {
+                val newValue = (current.value + delta).coerceIn(min, max)
+                return current.copy(value = newValue)
+            }
+            
             // Simulate random variations
+            val newRpm = update(currentData.rpm, Random.nextInt(-100, 100).toFloat(), 800f, 7000f)
+            val newBoost = update(currentData.boost, Random.nextFloat() * 0.1f - 0.05f, 0f, 2.0f)
+
             currentData = currentData.copy(
-                rpm = (currentData.rpm + Random.nextInt(-100, 100)).coerceIn(800, 7000),
-                boost = (currentData.boost + Random.nextFloat() * 0.1f - 0.05f).coerceIn(0f, 2.0f),
-                batteryVoltage = (currentData.batteryVoltage + Random.nextFloat() * 0.1f - 0.05f).coerceIn(12.0f, 14.5f),
-                pulseWidth = (currentData.pulseWidth + Random.nextFloat() * 0.5f - 0.25f).coerceIn(0f, 20f),
-                coolantTemp = (currentData.coolantTemp + Random.nextInt(-1, 2)).coerceIn(70, 110),
-                sparkLines = (currentData.sparkLines + Random.nextFloat() * 0.5f - 0.25f).coerceIn(10f, 40f),
-                dutyCycle = (currentData.dutyCycle + Random.nextFloat() * 1f - 0.5f).coerceIn(0f, 100f),
-                speed = (currentData.speed + Random.nextInt(-2, 3)).coerceIn(0, 240),
-                iat = (currentData.iat + Random.nextInt(-1, 2)).coerceIn(20, 60),
-                afr = (currentData.afr + Random.nextFloat() * 0.1f - 0.05f).coerceIn(10f, 20f),
-                maf = (currentData.maf + Random.nextFloat() * 1f - 0.5f).coerceIn(0f, 100f),
+                rpm = newRpm,
+                boost = newBoost,
+                batteryVoltage = update(currentData.batteryVoltage, Random.nextFloat() * 0.1f - 0.05f, 12.0f, 14.5f),
+                pulseWidth = update(currentData.pulseWidth, Random.nextFloat() * 0.5f - 0.25f, 0f, 20f),
+                coolantTemp = update(currentData.coolantTemp, Random.nextInt(-1, 2).toFloat(), 70f, 110f),
+                sparkLines = update(currentData.sparkLines, Random.nextFloat() * 0.5f - 0.25f, 10f, 40f),
+                dutyCycle = update(currentData.dutyCycle, Random.nextFloat() * 1f - 0.5f, 0f, 100f),
+                speed = update(currentData.speed, Random.nextInt(-2, 3).toFloat(), 0f, 240f),
+                iat = update(currentData.iat, Random.nextInt(-1, 2).toFloat(), 20f, 60f),
+                afr = update(currentData.afr, Random.nextFloat() * 0.1f - 0.05f, 10f, 20f),
+                maf = update(currentData.maf, Random.nextFloat() * 1f - 0.5f, 0f, 100f),
                 
                 // Update history
-                rpmHistory = (currentData.rpmHistory + currentData.rpm.toFloat()).takeLast(50),
-                boostHistory = (currentData.boostHistory + currentData.boost).takeLast(50)
-                // Add others as needed
+                rpmHistory = (currentData.rpmHistory + newRpm.value).takeLast(50),
+                boostHistory = (currentData.boostHistory + newBoost.value).takeLast(50)
             )
             
             emit(currentData)

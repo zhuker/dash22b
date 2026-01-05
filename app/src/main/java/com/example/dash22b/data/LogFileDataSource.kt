@@ -1,6 +1,5 @@
 package com.example.dash22b.data
 
-// import android.content.Context
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -17,9 +16,6 @@ class LogFileDataSource(private val assetLoader: AssetLoader) {
     // private val logFileName = "sampleLogs/20251018-p0420.csv"
      private val logFileName = "sampleLogs/20251024184038-replaced-o2-sensor.csv"
 
-    // ... (previous code) ...
-    // private val logFileName = "sampleLogs/20251024184038-replaced-o2-sensor.csv" (keep existing)
-
     fun getEngineData(): Flow<EngineData> = flow {
         // Initialize Registry
         ParameterRegistry.initialize(assetLoader)
@@ -35,46 +31,34 @@ class LogFileDataSource(private val assetLoader: AssetLoader) {
                 val headers = headerLine.split(",").map { it.trim() }
                 
                 // 3. Dynamic Column Mapping
-                data class MappedColumn(val index: Int, val definition: ParameterDefinition)
+                data class MappedColumn(val index: Int, val definition: ParameterDefinition, val logUnit: String)
                 val mappedColumns = mutableListOf<MappedColumn>()
                 
                 headers.forEachIndexed { index, header ->
-                    // Try to find a matching definition in the registry
-                    // The Registry maps "Accessport Monitor Name" -> Definition
-                    // But Log Headers might be slightly different.
-                    // The provided CSV "Accessport Monitor" column matches the log headers usually.
-                    // Let's try direct look up specific normalization.
+                    // Extract Unit if present in header, e.g. "RPM (rpm)" or "Boost (psi)"
+                    val unitRegex = Regex("(.*)\\s*\\((.*?)\\)")
+                    val match = unitRegex.matchEntire(header)
                     
-                    // Simple normalization: remove units in parens if present for matching? 
-                    // e.g. "RPM (rpm)" -> "RPM". 
-                    // Registry has "RPM".
-                    
-                    // Specific to Cobb generic logs: Headers often match exactly or need simple cleaning.
-                    // Let's iterate all definitions and see if header contains the name (case insensitive).
-                    // Or specific known mappings.
-                    
-                    // Optimization: Registry keys are lowercase accessport names.
-                    // Try to match header (lowercased) to keys.
-                    // Also strip common units "(psi)", "(F)", "(g/s)" etc from header before matching.
-                    
-                    val cleanHeader = header.replace(Regex("\\(.*?\\)"), "").trim()
+                    val cleanHeader = match?.groupValues?.get(1)?.trim() ?: header.trim()
+                    val logUnit = match?.groupValues?.get(2)?.trim() ?: ""
+
                     var def = ParameterRegistry.getDefinition(cleanHeader)
                     
-                    // Fallback: Check if any definition's accessport name is contained in the header?
+                    // Fallback lookup
                     if (def == null) {
                          val allDefs = ParameterRegistry.getAllDefinitions()
                          def = allDefs.firstOrNull { header.contains(it.accessportName, ignoreCase = true) }
                     }
 
                     if (def != null) {
-                        mappedColumns.add(MappedColumn(index, def))
+                        mappedColumns.add(MappedColumn(index, def, logUnit))
                     }
                 }
                 
                 // Identify critical columns for specific UI logic (Timestamp, History)
                 val timeIdx = headers.indexOfFirst { it.contains("Time", ignoreCase = true) }
                 
-                // 6. Playback Loop (Keep existing time logic)
+                // 6. Playback Loop
                 var baseTime = 1493373060000L 
                 try {
                     val simpleName = logFileName.substringAfterLast("/")
@@ -108,56 +92,33 @@ class LogFileDataSource(private val assetLoader: AssetLoader) {
                     previousLogTime = time
 
                     // Parse All Mapped Columns
-                    val dynamicValues = mutableMapOf<String, Float>()
+                    val dynamicValues = mutableMapOf<String, ValueWithUnit>()
                     mappedColumns.forEach { col ->
                         val rawVal = getF(col.index)
-                        // TODO: Apply conversions if needed based on col.definition.unit vs expected?
-                        // For now assuming log units match display expectations (Accessport standard).
-                        // Except known ones like Boost (kPa/PSI vs Bar).
-                        
-                        var processedVal = rawVal
-                        
-                        // Special Handling from previous logic
-                        if (col.definition.name.equals("Boost", ignoreCase = true) ||
-                            col.definition.name.equals("Manifold Relative Pressure", ignoreCase = true)) {
-                             // Heuristic: If value > 50, likely kPa. If value < 30 and > -14.7, likely psi?
-                             // But let's check header unit again if possible?
-                             // Registry handles name mapping. The *header* had the unit.
-                             // Re-using previous simple logic:
-                             val headerStr = headers[col.index]
-                             if (headerStr.contains("kPa", ignoreCase = true)) processedVal /= 100f // to Bar
-                             else if (headerStr.contains("psi", ignoreCase = true)) processedVal *= 0.0689476f // to Bar
-                        }
-                        
-                        if (col.definition.name.equals("Intake Temp", ignoreCase = true) || 
-                            col.definition.name.equals("Coolant Temp", ignoreCase = true)) {
-                                val headerStr = headers[col.index]
-                                if (headerStr.contains("(F)", ignoreCase = true)) {
-                                    processedVal = (processedVal - 32) * 5 / 9
-                                }
-                        }
-                        
-                        dynamicValues[col.definition.accessportName] = processedVal
+                        // Store RAW value with its UNIT
+                        dynamicValues[col.definition.accessportName] = ValueWithUnit(rawVal, col.logUnit)
                     }
                     
-                    // Backward Compatibility Mapping
-                    // Use standard names from Registry to populate standard fields
-                    // Note: Ensure Registry names match these exactly or map them.
-                    // Common names: "RPM", "Boost", "Battery Voltage", "Coolant Temp", "Ignition Timing", "Inj Duty Cycle", 
-                    // "Vehicle Speed", "Intake Temp", "AFR", "MAF"
+                    // Backward Compatibility Mapping - Populate Standard Fields with ValueWithUnit items from Map
+                    // Fallback to defaults with empty unit if missing
                     
-                    val rpm = dynamicValues["RPM"]?.toInt() ?: dynamicValues["Engine Speed"]?.toInt() ?: 0
-                    val boost = dynamicValues["Boost"] ?: dynamicValues["Manifold Relative Pressure"] ?: 0f
-                    val battery = dynamicValues["Battery Voltage"] ?: 0f
-                    val pulse = 0f // Not standard mapped yet?
-                    val coolant = dynamicValues["Coolant Temp"]?.toInt() ?: 0
-                    val spark = dynamicValues["Ignition Timing"] ?: 0f
-                    val duty = dynamicValues["Inj Duty Cycle"] ?: dynamicValues["Injector Duty Cycle"] ?: 0f
-                    val speed = dynamicValues["Vehicle Speed"]?.toInt() ?: 0
-                    val iat = dynamicValues["Intake Temp"]?.toInt() ?: 0
-                    val afr = dynamicValues["AFR"] ?: dynamicValues["AF Sens 1 Ratio"] ?: 0f
-                    val maf = dynamicValues["Mass Airflow"] ?: 0f // or MAF
-                    
+                    fun getV(key: String, altKey: String? = null, defaultUnit: String = ""): ValueWithUnit {
+                        return dynamicValues[key] 
+                            ?: (if (altKey != null) dynamicValues[altKey] else null)
+                            ?: ValueWithUnit(0f, defaultUnit)
+                    }
+
+                    val rpm = getV("RPM", "Engine Speed", "rpm")
+                    val boost = getV("Boost", "Manifold Relative Pressure", "psi") // Default unit guess
+                    val battery = getV("Battery Voltage", null, "V")
+                    val pulse = getV("Inj Pulse Width", null, "ms")
+                    val coolant = getV("Coolant Temp", null, "F")
+                    val spark = getV("Ignition Timing", null, "deg")
+                    val duty = getV("Inj Duty Cycle", "Injector Duty Cycle", "%")
+                    val speed = getV("Vehicle Speed", null, "km/h")
+                    val iat = getV("Intake Temp", null, "F")
+                    val afr = getV("AFR", "AF Sens 1 Ratio", "AFR")
+                    val maf = getV("Mass Airflow", null, "g/s")
                     
                     val newData = EngineData(
                         timestamp = currentTimestamp,
@@ -175,11 +136,10 @@ class LogFileDataSource(private val assetLoader: AssetLoader) {
                         afr = afr,
                         maf = maf,
                         
-                        // Populate others if needed, or rely on 'values' map in UI now
-                        
-                        // History
-                        rpmHistory = (currentHistory.rpmHistory + rpm.toFloat()).takeLast(50),
-                        boostHistory = (currentHistory.boostHistory + boost).takeLast(50)
+                        // History: Use raw values for now. 
+                        // Graphs will need to handle unit conversion if needed.
+                        rpmHistory = (currentHistory.rpmHistory + rpm.value).takeLast(50),
+                        boostHistory = (currentHistory.boostHistory + boost.value).takeLast(50)
                     )
                     
                     currentHistory = newData

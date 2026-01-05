@@ -59,47 +59,45 @@ class LogFileDataSourceTest {
 
         // 4. Assertions based on "initialConfigs" from DashboardScreen
         // GaugeConfig(0, "RPM")
-        assertEquals(3200f, engineData.values["RPM"]) 
+        assertEquals(3200f, engineData.values["RPM"]?.value) 
         
         // GaugeConfig(1, "Vehicle Speed")
-        assertEquals(60f, engineData.values["Vehicle Speed"])
+        assertEquals(60f, engineData.values["Vehicle Speed"]?.value)
 
         // GaugeConfig(2, "Boost")
-        // Logic in DataSource applies conversion for "psi" -> bar: val * 0.0689476f
-        // 14.5 * 0.0689476 \u2248 1.0
-        // Wait, Header in my mock is plain "Boost". DataSource checks header string for "psi" or "kPa"
-        // In my mock `logCsv`, header is just "Boost". So no conversion will happen.
-        // Let's verify raw value first or update header to test conversion.
-        // User asked to test extraction, so raw 14.5 is expected if no unit in header.
-        assertEquals("Boost check", 14.5f, engineData.values["Boost"])
+        // Logic in DataSource now just parses. Header was "Boost". Unit empty? 
+        // Mock CSV has "Boost" as header.
+        // My code regex: `(.*)\s*\((.*?)\)`. Matching "Boost" -> match null?
+        // Fallback `trim()`. Unit "".
+        assertEquals(14.5f, engineData.values["Boost"]?.value)
 
         // GaugeConfig(3, "Battery Voltage")
-        assertEquals(13.8f, engineData.values["Battery Voltage"])
+        assertEquals(13.8f, engineData.values["Battery Voltage"]?.value)
 
         // GaugeConfig(4, "Inj Pulse Width")
-        assertEquals(2.5f, engineData.values["Inj Pulse Width"])
+        assertEquals(2.5f, engineData.values["Inj Pulse Width"]?.value)
 
         // GaugeConfig(5, "Coolant Temp")
-         // Logic checks if header has "(F)" to convert to C. Here it doesn't.
-        assertEquals(190f, engineData.values["Coolant Temp"])
+        assertEquals(190f, engineData.values["Coolant Temp"]?.value)
 
         // GaugeConfig(6, "Ignition Timing")
-        assertEquals(12.5f, engineData.values["Ignition Timing"])
+        assertEquals(12.5f, engineData.values["Ignition Timing"]?.value)
 
         // GaugeConfig(7, "Inj Duty Cycle")
-        assertEquals(15.5f, engineData.values["Inj Duty Cycle"])
+        assertEquals(15.5f, engineData.values["Inj Duty Cycle"]?.value)
 
         // GaugeConfig(8, "Intake Temp")
-        assertEquals(85f, engineData.values["Intake Temp"])
+        assertEquals(85f, engineData.values["Intake Temp"]?.value)
 
         // GaugeConfig(9, "Comm Fuel Final")
-        assertEquals(14.2f, engineData.values["Comm Fuel Final"])
+        assertEquals(14.2f, engineData.values["Comm Fuel Final"]?.value)
 
         // GaugeConfig(10, "Mass Airflow")
-        assertEquals(45.5f, engineData.values["Mass Airflow"])
+        assertEquals(45.5f, engineData.values["Mass Airflow"]?.value)
         
         // Verify Common Field Mapping (Backward Compatibility)
-        assertEquals("Common Field RPM", 3200, engineData.rpm)
-        assertEquals("Common Field Speed", 60, engineData.speed)
+        // rpm is ValueWithUnit.
+        assertEquals("Common Field RPM", 3200, engineData.rpm.value.toInt())
+        assertEquals("Common Field Speed", 60, engineData.speed.value.toInt())
     }
 }
