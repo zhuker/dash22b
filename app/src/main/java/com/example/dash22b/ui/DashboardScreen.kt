@@ -34,7 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.example.dash22b.data.EngineData
-import com.example.dash22b.data.MockDataSource
+import com.example.dash22b.data.LogFileDataSource
 import com.example.dash22b.ui.components.CircularGauge
 import com.example.dash22b.ui.components.LineGraph
 import com.example.dash22b.ui.theme.DashboardDarkBg
@@ -52,8 +52,10 @@ enum class ScreenMode {
 @Composable
 fun DashboardScreen() {
     // State for Data
-    val dataSource = remember { MockDataSource() }
-    val engineData by dataSource.getEngineData().collectAsState(initial = EngineData())
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val dataSource = remember { LogFileDataSource(context) }
+    val dataFlow = remember(dataSource) { dataSource.getEngineData() }
+    val engineData by dataFlow.collectAsState(initial = EngineData())
     
     // State for Navigation
     var currentMode by remember { mutableStateOf(ScreenMode.GAUGES) }
