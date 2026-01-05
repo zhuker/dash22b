@@ -90,8 +90,7 @@ fun ParameterSelectionDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onParameterSelected(param.accessportName) }
-                            .padding(16.dp),
-                        color = Color.White
+                            .padding(16.dp)
                     )
                     androidx.compose.material3.Divider(color = Color.DarkGray)
                 }
