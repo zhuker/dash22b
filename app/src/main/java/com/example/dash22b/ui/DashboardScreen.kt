@@ -89,14 +89,14 @@ fun DashboardScreen() {
                         ScreenMode.GRAPHS -> GraphsContent(engineData) // Graphs reuse for now
                         ScreenMode.OTHER -> Text("Other Settings", color = Color.White)
                     }
-                    
-                    // Bottom Status Bar
-                    BottomStatusBar(
-                        engineData = engineData,
-                        modifier = Modifier.align(Alignment.BottomCenter)
-                    )
                 }
                 
+                // Bottom Status Bar (Now stacked below content in Portrait)
+                BottomStatusBar(
+                    engineData = engineData,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+
                 // Bottom Navigation
                 BottomNavigationBar(
                     currentMode = currentMode,
@@ -593,14 +593,14 @@ fun BottomStatusBar(
         horizontalArrangement = Arrangement.SpaceAround,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text("000006 km", color = Color.White)
-        Text("005.6 km", color = Color.White)
-        
         val dateObj = Date(engineData.timestamp)
         val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
         val dateFormat = SimpleDateFormat("dd.M.yyyy", Locale.getDefault())
-        
-        Text(timeFormat.format(dateObj), color = Color.White)
-        Text(dateFormat.format(dateObj), color = Color.White)
+
+        // Using smaller text styles and ensuring single line
+        Text(text = "000006 km", color = Color.White, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+        Text(text = "005.6 km", color = Color.White, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+        Text(text = timeFormat.format(dateObj), color = Color.White, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+        Text(text = dateFormat.format(dateObj), color = Color.White, style = MaterialTheme.typography.labelMedium, maxLines = 1)
     }
 }
