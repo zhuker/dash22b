@@ -15,7 +15,7 @@ class LogFileDataSource(private val context: Context) {
     // Let's pick one that has extensive data or the one requested last? 
     // User modified code to use "20251018-p0420.csv". I will stick with that or allow passing it.
 //    private val logFileName = "sampleLogs/20251018-p0420.csv"
-     private val logFileName = "sampleLogs/intake-temp-21C.csv"
+     private val logFileName = "sampleLogs/20251024184038-replaced-o2-sensor.csv"
 
     fun getEngineData(): Flow<EngineData> = flow {
         while (true) {
@@ -79,6 +79,22 @@ class LogFileDataSource(private val context: Context) {
                 val isCoolantF = isUnit(coolantIdx, "(F)")
 
                 // 6. Playback Loop
+                // Attempt to determine base time from filename
+                // Format: YYYYMMDDHHMMSS-xxxx.csv
+                var baseTime = 1493373060000L // Default fallback
+                try {
+                    val simpleName = logFileName.substringAfterLast("/")
+                    // Take first 14 chars
+                    if (simpleName.length >= 14 && simpleName.take(14).all { it.isDigit() }) {
+                        val timestampStr = simpleName.take(14)
+                        val format = java.text.SimpleDateFormat("yyyyMMddHHmmss", java.util.Locale.US)
+                        format.timeZone = java.util.TimeZone.getDefault() 
+                        baseTime = format.parse(timestampStr)?.time ?: baseTime
+                    }
+                } catch (e: Exception) {
+                    // Ignore parsing errors
+                }
+
                 var startTime = System.currentTimeMillis()
                 var previousLogTime = 0f
                 var currentHistory = EngineData()
@@ -100,7 +116,9 @@ class LogFileDataSource(private val context: Context) {
                     }
 
                     // Time Sync
-                    val time = getF(timeIdx)
+                    val time = getF(timeIdx) // Seconds from start of log
+                    val currentTimestamp = baseTime + (time * 1000).toLong()
+
                     val timeDiff = (time - previousLogTime) * 1000
                     if (timeDiff > 0) delay(timeDiff.toLong())
                     previousLogTime = time
@@ -122,6 +140,7 @@ class LogFileDataSource(private val context: Context) {
                     if (isCoolantF) coolantVal = ((coolantVal - 32) * 5 / 9)
                     
                     val newData = EngineData(
+                        timestamp = currentTimestamp,
                         rpm = rpm,
                         boost = boostVal,
                         batteryVoltage = getF(batteryIdx),

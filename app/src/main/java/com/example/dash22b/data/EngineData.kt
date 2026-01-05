@@ -2,6 +2,7 @@ package com.example.dash22b.data
 
 data class EngineData(
     // Common Dashboard Fields
+    val timestamp: Long = 0L, // Epoch millis
     val rpm: Int = 0,
     val boost: Float = 0f, // bar
     val batteryVoltage: Float = 0f, // V

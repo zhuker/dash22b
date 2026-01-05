@@ -45,6 +45,10 @@ import com.example.dash22b.ui.theme.GaugeRed
 import com.example.dash22b.ui.theme.GaugeTeal
 import com.example.dash22b.ui.theme.Purple40
 
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
 enum class ScreenMode {
     GAUGES, GRAPHS, OTHER
 }
@@ -83,7 +87,10 @@ fun DashboardScreen() {
             }
             
             // Bottom Status Bar (Visible in all modes usually, or just overlay)
-            BottomStatusBar(modifier = Modifier.align(Alignment.BottomCenter))
+            BottomStatusBar(
+                engineData = engineData,
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
         }
     }
 }
@@ -375,7 +382,10 @@ fun GraphsContent(data: EngineData) {
 }
 
 @Composable
-fun BottomStatusBar(modifier: Modifier = Modifier) {
+fun BottomStatusBar(
+    engineData: EngineData,
+    modifier: Modifier = Modifier
+) {
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -386,7 +396,12 @@ fun BottomStatusBar(modifier: Modifier = Modifier) {
     ) {
         Text("000006 km", color = Color.White)
         Text("005.6 km", color = Color.White)
-        Text("10:31", color = Color.White)
-        Text("28.4.2017", color = Color.White)
+        
+        val dateObj = Date(engineData.timestamp)
+        val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+        val dateFormat = SimpleDateFormat("dd.M.yyyy", Locale.getDefault())
+        
+        Text(timeFormat.format(dateObj), color = Color.White)
+        Text(dateFormat.format(dateObj), color = Color.White)
     }
 }
