@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
@@ -72,7 +75,9 @@ fun DashboardScreen() {
         val isPortrait = maxHeight > maxWidth
         
         if (isPortrait) {
-            Column(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier
+                .fillMaxSize()
+                /*.windowInsetsPadding(WindowInsets.safeDrawing)*/) { // Add padding for system bars
                 // Main Content
                 Box(modifier = Modifier
                     .weight(1f)
@@ -100,7 +105,9 @@ fun DashboardScreen() {
             }
         } else {
             // Landscape Layout (Original)
-            Row(modifier = Modifier.fillMaxSize()) {
+            Row(modifier = Modifier
+                .fillMaxSize()
+                /*.windowInsetsPadding(WindowInsets.safeDrawing)*/) { // Add padding for system bars
                 // Sidebar
                 NavigationSidebar(
                     currentMode = currentMode,

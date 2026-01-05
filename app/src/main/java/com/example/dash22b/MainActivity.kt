@@ -13,9 +13,12 @@ import androidx.compose.ui.tooling.preview.Preview
 import com.example.dash22b.ui.theme.Dash22bTheme
 import com.example.dash22b.ui.DashboardScreen
 
+import androidx.activity.enableEdgeToEdge
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         setContent {
             Dash22bTheme {
                 // A surface container using the 'background' color from the theme
