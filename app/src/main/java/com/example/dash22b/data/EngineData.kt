@@ -30,6 +30,9 @@ data class EngineData(
     val throttlePos: Float = 0f, // %
     val wastegateDuty: Float = 0f, // %
     
+    // Generic Map for all parsed values (Key = Accessport Name)
+    val values: Map<String, Float> = emptyMap(),
+
     // History (for graphs)
     val rpmHistory: List<Float> = emptyList(),
     val boostHistory: List<Float> = emptyList(),

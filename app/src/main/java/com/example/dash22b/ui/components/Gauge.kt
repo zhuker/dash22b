@@ -1,6 +1,8 @@
 package com.example.dash22b.ui.components
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
@@ -22,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.dash22b.ui.theme.GaugeGreen
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CircularGauge(
     value: Float,
@@ -31,12 +34,17 @@ fun CircularGauge(
     label: String,
     unit: String,
     color: Color = GaugeGreen,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onLongClick: () -> Unit = {}
 ) {
     Box(
         modifier = modifier
             .aspectRatio(1f)
-            .padding(8.dp),
+            .padding(8.dp)
+            .combinedClickable(
+                onClick = {}, // No-op for normal click, or maybe focus?
+                onLongClick = onLongClick
+            ),
         contentAlignment = Alignment.Center
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {

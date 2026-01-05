@@ -52,20 +52,107 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
+import com.example.dash22b.data.ParameterRegistry
+
 enum class ScreenMode {
     GAUGES, GRAPHS, OTHER
+}
+
+data class GaugeConfig(
+    val id: Int,
+    val parameterName: String
+)
+
+@Composable
+fun ParameterSelectionDialog(
+    onDismiss: () -> Unit,
+    onParameterSelected: (String) -> Unit
+) {
+    val options = remember { ParameterRegistry.getAllDefinitions() }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Select Parameter") },
+        text = {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(300.dp)
+            ) {
+                items(options) { param ->
+                    Text(
+                        text = "${param.name} (${param.unit})",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onParameterSelected(param.accessportName) }
+                            .padding(16.dp),
+                        color = Color.White
+                    )
+                    androidx.compose.material3.Divider(color = Color.DarkGray)
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @Composable
 fun DashboardScreen() {
     // State for Data
     val context = androidx.compose.ui.platform.LocalContext.current
-    val dataSource = remember { LogFileDataSource(context) }
+    // Use the concrete Android implementation here at the UI boundary
+    val assetLoader = remember { com.example.dash22b.data.AndroidAssetLoader(context) }
+    val dataSource = remember { LogFileDataSource(assetLoader) }
     val dataFlow = remember(dataSource) { dataSource.getEngineData() }
     val engineData by dataFlow.collectAsState(initial = EngineData())
     
     // State for Navigation
     var currentMode by remember { mutableStateOf(ScreenMode.GAUGES) }
+
+    // State for Dynamic Gauges (ID -> Config)
+    // IDs: 
+    // 0, 1: Big Gauges (Top in Portrait, Left in Landscape)
+    // 2..10: Small Grid Gauges
+    val initialConfigs = remember {
+        listOf(
+            GaugeConfig(0, "RPM"),
+            GaugeConfig(1, "Vehicle Speed"),
+            GaugeConfig(2, "Boost"), // or "Manifold Relative Pressure" depending on registry
+            GaugeConfig(3, "Battery Voltage"),
+            GaugeConfig(4, "Inj Pulse Width"), 
+            GaugeConfig(5, "Coolant Temp"),
+            GaugeConfig(6, "Ignition Timing"), 
+            GaugeConfig(7, "Inj Duty Cycle"), 
+            GaugeConfig(8, "Intake Temp"), 
+            GaugeConfig(9, "Comm Fuel Final"), // "AFR" usually mapped to Comm Fuel Final or AF Sens 1 Ratio
+            GaugeConfig(10, "Mass Airflow")
+        )
+    }
+    
+    var gaugeConfigs by remember { mutableStateOf(initialConfigs) }
+    var showDialogForId by remember { mutableStateOf<Int?>(null) }
+
+    if (showDialogForId != null) {
+        ParameterSelectionDialog(
+            onDismiss = { showDialogForId = null },
+            onParameterSelected = { newParam ->
+                gaugeConfigs = gaugeConfigs.map { 
+                    if (it.id == showDialogForId) it.copy(parameterName = newParam) else it 
+                }
+                showDialogForId = null
+            }
+        )
+    }
 
     androidx.compose.foundation.layout.BoxWithConstraints(
         modifier = Modifier
@@ -85,7 +172,11 @@ fun DashboardScreen() {
                     .padding(16.dp)) {
                     
                     when (currentMode) {
-                        ScreenMode.GAUGES -> PortraitGaugesContent(engineData)
+                        ScreenMode.GAUGES -> PortraitGaugesContent(
+                            engineData = engineData,
+                            gaugeConfigs = gaugeConfigs,
+                            onGaugeLongClick = { id -> showDialogForId = id }
+                        )
                         ScreenMode.GRAPHS -> GraphsContent(engineData) // Graphs reuse for now
                         ScreenMode.OTHER -> Text("Other Settings", color = Color.White)
                     }
@@ -121,7 +212,11 @@ fun DashboardScreen() {
                     .padding(16.dp)) {
                     
                     when (currentMode) {
-                        ScreenMode.GAUGES -> GaugesContent(engineData)
+                        ScreenMode.GAUGES -> GaugesContent(
+                            engineData = engineData,
+                            gaugeConfigs = gaugeConfigs,
+                            onGaugeLongClick = { id -> showDialogForId = id }
+                        )
                         ScreenMode.GRAPHS -> GraphsContent(engineData)
                         ScreenMode.OTHER -> Text("Other Settings", color = Color.White)
                     }
@@ -246,133 +341,111 @@ fun NavItem(
 
 
 @Composable
-fun PortraitGaugesContent(data: EngineData) {
+fun DynamicCircularGauge(
+    config: GaugeConfig,
+    data: EngineData,
+    modifier: Modifier = Modifier,
+    isBig: Boolean = false,
+    onLongClick: () -> Unit
+) {
+    // Look up definition
+    val def = ParameterRegistry.getDefinition(config.parameterName)
+    val value = data.values[config.parameterName] ?: 0f
+    
+    // Fallbacks if not found
+    val label = def?.name ?: config.parameterName
+    val unit = def?.unit ?: ""
+    // Heuristic Min/Max from Def or Defaults
+    val min = 0f // Parse from def.minExpected in future
+    val max = if (def?.maxExpected?.contains("100") == true) 100f 
+              else if (def?.name?.contains("RPM") == true) 8000f
+              else if (def?.name?.contains("Boost") == true) 2.5f
+              else if (def?.name?.contains("Voltage") == true) 16f
+              else 100f // Default max
+              
+    // Color logic could also be dynamic? Keep defaults for now.
+    val color = if (isBig) {
+         if (config.id == 0) GaugeGreen else GaugeRed
+    } else {
+        when(config.id % 3) {
+            0 -> GaugeGreen
+            1 -> GaugeTeal
+            else -> GaugeOrange
+        }
+    }
+
+    CircularGauge(
+        value = value,
+        minValue = min,
+        maxValue = max,
+        label = label,
+        unit = unit,
+        color = color,
+        modifier = modifier,
+        onLongClick = onLongClick
+    )
+}
+
+@Composable
+fun PortraitGaugesContent(
+    engineData: EngineData,
+    gaugeConfigs: List<GaugeConfig>,
+    onGaugeLongClick: (Int) -> Unit
+) {
     Column(modifier = Modifier.fillMaxSize()) {
-        // Top Row: Big RPM and Speed
+        // Top Row: Big Gauges (IDs 0, 1)
         Row(
             modifier = Modifier
                 .weight(0.4f)
                 .fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            CircularGauge(
-                value = data.rpm.toFloat(),
-                maxValue = 8000f,
-                label = "RPM",
-                format = "%.0f",
-                unit = "",
-                color = GaugeGreen,
-                modifier = Modifier.weight(1f).padding(8.dp)
+            DynamicCircularGauge(
+                config = gaugeConfigs.find { it.id == 0 } ?: GaugeConfig(0, "RPM"),
+                data = engineData,
+                modifier = Modifier.weight(1f).padding(8.dp),
+                isBig = true,
+                onLongClick = { onGaugeLongClick(0) }
             )
-            CircularGauge(
-                value = data.speed.toFloat(),
-                maxValue = 300f,
-                label = "Speed",
-                format = "%.0f",
-                unit = "km/h",
-                color = GaugeRed,
-                modifier = Modifier.weight(1f).padding(8.dp)
+            DynamicCircularGauge(
+                config = gaugeConfigs.find { it.id == 1 } ?: GaugeConfig(1, "Vehicle Speed"),
+                data = engineData,
+                modifier = Modifier.weight(1f).padding(8.dp),
+                isBig = true,
+                onLongClick = { onGaugeLongClick(1) }
             )
         }
         
-        // Bottom Grid: Smaller gauges
+        // Bottom Grid: Smaller gauges (IDs 2..10)
         Column(
             modifier = Modifier.weight(0.6f),
             verticalArrangement = Arrangement.SpaceEvenly
         ) {
-            // Row 1
-            Row(modifier = Modifier.weight(1f)) {
-                 CircularGauge(
-                    value = data.boost,
-                    maxValue = 2.5f,
-                    label = "Boost",
-                    unit = "bar",
-                    color = GaugeGreen,
-                    modifier = Modifier.weight(1f)
-                )
-                 CircularGauge(
-                    value = data.batteryVoltage,
-                    minValue = 10f,
-                    maxValue = 16f,
-                    label = "Battery",
-                    unit = "V",
-                    color = GaugeTeal,
-                    modifier = Modifier.weight(1f)
-                )
-                 CircularGauge(
-                    value = data.pulseWidth,
-                    maxValue = 25f,
-                    label = "Pulse",
-                    unit = "",
-                    color = GaugeOrange,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-             // Row 2
-            Row(modifier = Modifier.weight(1f)) {
-                 CircularGauge(
-                    value = data.coolantTemp.toFloat(),
-                    minValue = 0f,
-                    maxValue = 150f,
-                    label = "Coolant",
-                    unit = "°C",
-                    color = GaugeGreen,
-                    modifier = Modifier.weight(1f)
-                )
-                 CircularGauge(
-                    value = data.sparkLines,
-                    maxValue = 60f,
-                    label = "Spark",
-                    unit = "",
-                    color = GaugeTeal,
-                    modifier = Modifier.weight(1f)
-                )
-                 CircularGauge(
-                    value = data.dutyCycle,
-                    maxValue = 100f,
-                    label = "Duty",
-                    unit = "%",
-                    color = GaugeTeal,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-             // Row 3
-            Row(modifier = Modifier.weight(1f)) {
-                 CircularGauge(
-                    value = data.iat.toFloat(),
-                    minValue = 0f,
-                    maxValue = 100f,
-                    label = "IAT",
-                    unit = "°C",
-                    color = GaugeOrange,
-                    modifier = Modifier.weight(1f)
-                )
-                 CircularGauge(
-                    value = data.afr,
-                    minValue = 10f,
-                    maxValue = 20f,
-                    label = "AFR",
-                    unit = "",
-                    color = GaugeTeal,
-                    modifier = Modifier.weight(1f)
-                )
-                 CircularGauge(
-                    value = data.maf,
-                    maxValue = 200f,
-                    label = "MAF",
-                    unit = "g/s",
-                    color = GaugeTeal,
-                    modifier = Modifier.weight(1f)
-                )
+            val gridIds = (2..10).toList().chunked(3)
+            gridIds.forEach { rowIds ->
+                Row(modifier = Modifier.weight(1f)) {
+                    rowIds.forEach { id ->
+                         DynamicCircularGauge(
+                            config = gaugeConfigs.find { it.id == id } ?: GaugeConfig(id, "Unknown"),
+                            data = engineData,
+                            modifier = Modifier.weight(1f),
+                            onLongClick = { onGaugeLongClick(id) }
+                        )
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-fun GaugesContent(data: EngineData) {
+fun GaugesContent(
+    engineData: EngineData,
+    gaugeConfigs: List<GaugeConfig>,
+    onGaugeLongClick: (Int) -> Unit
+) {
     Row(modifier = Modifier.fillMaxSize()) {
-        // Left Column (Large Gauges)
+        // Left Column (Large Gauges IDs 0, 1)
         Column(
             modifier = Modifier
                 .weight(0.4f)
@@ -380,117 +453,41 @@ fun GaugesContent(data: EngineData) {
             verticalArrangement = Arrangement.SpaceEvenly,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            CircularGauge(
-                value = data.rpm.toFloat(),
-                maxValue = 8000f,
-                label = "RPM",
-                format = "%.0f",
-                unit = "", // Unit is just RPM
-                color = GaugeGreen,
-                modifier = Modifier.weight(1f).padding(16.dp)
+            DynamicCircularGauge(
+                config = gaugeConfigs.find { it.id == 0 } ?: GaugeConfig(0, "RPM"),
+                data = engineData,
+                modifier = Modifier.weight(1f).padding(16.dp),
+                isBig = true,
+                onLongClick = { onGaugeLongClick(0) }
             )
-            CircularGauge(
-                value = data.speed.toFloat(),
-                maxValue = 300f,
-                label = "Speed",
-                format = "%.0f",
-                unit = "km/h",
-                color = GaugeRed,
-                modifier = Modifier.weight(1f).padding(16.dp)
+            DynamicCircularGauge(
+                config = gaugeConfigs.find { it.id == 1 } ?: GaugeConfig(1, "Vehicle Speed"),
+                data = engineData,
+                modifier = Modifier.weight(1f).padding(16.dp),
+                isBig = true,
+                onLongClick = { onGaugeLongClick(1) }
             )
         }
         
-        // Right Grid (Smaller Gauges)
+        // Right Grid (Smaller Gauges IDs 2..10)
         Column(
             modifier = Modifier
                 .weight(0.6f)
                 .fillMaxHeight(),
              verticalArrangement = Arrangement.SpaceEvenly
         ) {
-            // Row 1
-            Row(modifier = Modifier.weight(1f)) {
-                 CircularGauge(
-                    value = data.boost,
-                    maxValue = 2.5f,
-                    label = "Boost",
-                    unit = "bar",
-                    color = GaugeGreen,
-                    modifier = Modifier.weight(1f)
-                )
-                 CircularGauge(
-                    value = data.batteryVoltage,
-                    minValue = 10f,
-                    maxValue = 16f,
-                    label = "Battery",
-                    unit = "V",
-                    color = GaugeTeal,
-                    modifier = Modifier.weight(1f)
-                )
-                 CircularGauge(
-                    value = data.pulseWidth,
-                    maxValue = 25f,
-                    label = "Pulse",
-                    unit = "Width",
-                    color = GaugeOrange,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-             // Row 2
-            Row(modifier = Modifier.weight(1f)) {
-                 CircularGauge(
-                    value = data.coolantTemp.toFloat(),
-                    minValue = 0f,
-                    maxValue = 150f,
-                    label = "Coolant",
-                    unit = "°C",
-                    color = GaugeGreen,
-                    modifier = Modifier.weight(1f)
-                )
-                 CircularGauge(
-                    value = data.sparkLines, // Using spark lines as value
-                    maxValue = 60f,
-                    label = "Spark",
-                    unit = "",
-                    color = GaugeTeal,
-                    modifier = Modifier.weight(1f)
-                )
-                 CircularGauge(
-                    value = data.dutyCycle,
-                    maxValue = 100f,
-                    label = "Duty",
-                    unit = "Cycle",
-                    color = GaugeTeal,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-             // Row 3
-            Row(modifier = Modifier.weight(1f)) {
-                 CircularGauge(
-                    value = data.iat.toFloat(),
-                    minValue = 0f,
-                    maxValue = 100f,
-                    label = "IAT",
-                    unit = "°C",
-                    color = GaugeOrange,
-                    modifier = Modifier.weight(1f)
-                )
-                 CircularGauge(
-                    value = data.afr,
-                    minValue = 10f,
-                    maxValue = 20f,
-                    label = "AFR",
-                    unit = "",
-                    color = GaugeTeal,
-                    modifier = Modifier.weight(1f)
-                )
-                 CircularGauge(
-                    value = data.maf,
-                    maxValue = 200f,
-                    label = "MAF",
-                    unit = "g/s",
-                    color = GaugeTeal,
-                    modifier = Modifier.weight(1f)
-                )
+            val gridIds = (2..10).toList().chunked(3)
+            gridIds.forEach { rowIds ->
+                Row(modifier = Modifier.weight(1f)) {
+                    rowIds.forEach { id ->
+                         DynamicCircularGauge(
+                            config = gaugeConfigs.find { it.id == id } ?: GaugeConfig(id, "Unknown"),
+                            data = engineData,
+                            modifier = Modifier.weight(1f),
+                            onLongClick = { onGaugeLongClick(id) }
+                        )
+                    }
+                }
             }
         }
     }
