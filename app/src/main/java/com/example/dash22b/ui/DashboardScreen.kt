@@ -64,33 +64,68 @@ fun DashboardScreen() {
     // State for Navigation
     var currentMode by remember { mutableStateOf(ScreenMode.GAUGES) }
 
-    Row(modifier = Modifier
-        .fillMaxSize()
-        .background(DashboardDarkBg)) {
+    androidx.compose.foundation.layout.BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(DashboardDarkBg)
+    ) {
+        val isPortrait = maxHeight > maxWidth
         
-        // Sidebar
-        NavigationSidebar(
-            currentMode = currentMode,
-            onModeSelected = { currentMode = it }
-        )
-
-        // Main Content
-        Box(modifier = Modifier
-            .weight(1f)
-            .fillMaxHeight()
-            .padding(16.dp)) {
-            
-            when (currentMode) {
-                ScreenMode.GAUGES -> GaugesContent(engineData)
-                ScreenMode.GRAPHS -> GraphsContent(engineData)
-                ScreenMode.OTHER -> Text("Other Settings", color = Color.White)
+        if (isPortrait) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Main Content
+                Box(modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(16.dp)) {
+                    
+                    when (currentMode) {
+                        ScreenMode.GAUGES -> PortraitGaugesContent(engineData)
+                        ScreenMode.GRAPHS -> GraphsContent(engineData) // Graphs reuse for now
+                        ScreenMode.OTHER -> Text("Other Settings", color = Color.White)
+                    }
+                    
+                    // Bottom Status Bar
+                    BottomStatusBar(
+                        engineData = engineData,
+                        modifier = Modifier.align(Alignment.BottomCenter)
+                    )
+                }
+                
+                // Bottom Navigation
+                BottomNavigationBar(
+                    currentMode = currentMode,
+                    onModeSelected = { currentMode = it }
+                )
             }
-            
-            // Bottom Status Bar (Visible in all modes usually, or just overlay)
-            BottomStatusBar(
-                engineData = engineData,
-                modifier = Modifier.align(Alignment.BottomCenter)
-            )
+        } else {
+            // Landscape Layout (Original)
+            Row(modifier = Modifier.fillMaxSize()) {
+                // Sidebar
+                NavigationSidebar(
+                    currentMode = currentMode,
+                    onModeSelected = { currentMode = it }
+                )
+
+                // Main Content
+                Box(modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .padding(16.dp)) {
+                    
+                    when (currentMode) {
+                        ScreenMode.GAUGES -> GaugesContent(engineData)
+                        ScreenMode.GRAPHS -> GraphsContent(engineData)
+                        ScreenMode.OTHER -> Text("Other Settings", color = Color.White)
+                    }
+                    
+                    // Bottom Status Bar
+                    BottomStatusBar(
+                        engineData = engineData,
+                        modifier = Modifier.align(Alignment.BottomCenter)
+                    )
+                }
+            }
         }
     }
 }
@@ -132,6 +167,40 @@ fun NavigationSidebar(
 }
 
 @Composable
+fun BottomNavigationBar(
+    currentMode: ScreenMode,
+    onModeSelected: (ScreenMode) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(80.dp)
+            .background(Color(0xFF1E1E1E)),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        NavItem(
+            icon = Icons.Default.Home,
+            label = "Gauges",
+            isSelected = currentMode == ScreenMode.GAUGES,
+            onClick = { onModeSelected(ScreenMode.GAUGES) }
+        )
+        NavItem(
+            icon = Icons.Default.Menu,
+            label = "Graphs",
+            isSelected = currentMode == ScreenMode.GRAPHS,
+            onClick = { onModeSelected(ScreenMode.GRAPHS) }
+        )
+        NavItem(
+            icon = Icons.Default.Settings,
+            label = "Other",
+            isSelected = currentMode == ScreenMode.OTHER,
+            onClick = { onModeSelected(ScreenMode.OTHER) }
+        )
+    }
+}
+
+@Composable
 fun NavItem(
     icon: ImageVector,
     label: String,
@@ -165,6 +234,129 @@ fun NavItem(
             style = MaterialTheme.typography.labelSmall,
             modifier = Modifier.padding(top = 4.dp)
         )
+    }
+}
+
+
+@Composable
+fun PortraitGaugesContent(data: EngineData) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Top Row: Big RPM and Speed
+        Row(
+            modifier = Modifier
+                .weight(0.4f)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            CircularGauge(
+                value = data.rpm.toFloat(),
+                maxValue = 8000f,
+                label = "RPM",
+                unit = "",
+                color = GaugeGreen,
+                modifier = Modifier.weight(1f).padding(8.dp)
+            )
+            CircularGauge(
+                value = data.speed.toFloat(),
+                maxValue = 300f,
+                label = "Speed",
+                unit = "km/h",
+                color = GaugeRed,
+                modifier = Modifier.weight(1f).padding(8.dp)
+            )
+        }
+        
+        // Bottom Grid: Smaller gauges
+        Column(
+            modifier = Modifier.weight(0.6f),
+            verticalArrangement = Arrangement.SpaceEvenly
+        ) {
+            // Row 1
+            Row(modifier = Modifier.weight(1f)) {
+                 CircularGauge(
+                    value = data.boost,
+                    maxValue = 2.5f,
+                    label = "Boost",
+                    unit = "bar",
+                    color = GaugeGreen,
+                    modifier = Modifier.weight(1f)
+                )
+                 CircularGauge(
+                    value = data.batteryVoltage,
+                    minValue = 10f,
+                    maxValue = 16f,
+                    label = "Battery",
+                    unit = "V",
+                    color = GaugeTeal,
+                    modifier = Modifier.weight(1f)
+                )
+                 CircularGauge(
+                    value = data.pulseWidth,
+                    maxValue = 25f,
+                    label = "Pulse",
+                    unit = "",
+                    color = GaugeOrange,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+             // Row 2
+            Row(modifier = Modifier.weight(1f)) {
+                 CircularGauge(
+                    value = data.coolantTemp.toFloat(),
+                    minValue = 0f,
+                    maxValue = 150f,
+                    label = "Coolant",
+                    unit = "°C",
+                    color = GaugeGreen,
+                    modifier = Modifier.weight(1f)
+                )
+                 CircularGauge(
+                    value = data.sparkLines,
+                    maxValue = 60f,
+                    label = "Spark",
+                    unit = "",
+                    color = GaugeTeal,
+                    modifier = Modifier.weight(1f)
+                )
+                 CircularGauge(
+                    value = data.dutyCycle,
+                    maxValue = 100f,
+                    label = "Duty",
+                    unit = "%",
+                    color = GaugeTeal,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+             // Row 3
+            Row(modifier = Modifier.weight(1f)) {
+                 CircularGauge(
+                    value = data.iat.toFloat(),
+                    minValue = 0f,
+                    maxValue = 100f,
+                    label = "IAT",
+                    unit = "°C",
+                    color = GaugeOrange,
+                    modifier = Modifier.weight(1f)
+                )
+                 CircularGauge(
+                    value = data.afr,
+                    minValue = 10f,
+                    maxValue = 20f,
+                    label = "AFR",
+                    unit = "",
+                    color = GaugeTeal,
+                    modifier = Modifier.weight(1f)
+                )
+                 CircularGauge(
+                    value = data.maf,
+                    maxValue = 200f,
+                    label = "MAF",
+                    unit = "g/s",
+                    color = GaugeTeal,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
     }
 }
 
