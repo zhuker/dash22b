@@ -9,7 +9,16 @@ object UnitConverter {
         val to = normalize(toUnit)
 
         return when {
+            (from == "dam" && to == "multiplier") -> value
+            (from == "multiplier" && to == "dam") -> value
+            (from == "°" && to == "degrees") -> value
+            (from == "degrees" && to == "°") -> value
+            (from == "lambda" && to == "afr") -> 14.7f / value
+            (from == "afr" && to == "lambda") -> 14.7f * value
             // Pressure
+            (from == "psi" && to == "kpa") -> value * 6.89475729f
+            (from == "kpa" && to == "psi") -> value * 0.145038f
+
             (from == "psi" && to == "bar") -> value * 0.0689476f
             (from == "kpa" && to == "bar") -> value * 0.01f
             (from == "bar" && to == "psi") -> value * 14.5038f
@@ -23,11 +32,11 @@ object UnitConverter {
             (from == "mph" && to == "km/h") -> value * 1.60934f
             (from == "km/h" && to == "mph") -> value / 1.60934f
             
-            else -> value // Unknown conversion, return raw
+            else -> throw Exception("unknown conversion from $from to $to")
         }
     }
 
     private fun normalize(unit: String): String {
-        return unit.trim().lowercase().replace(Regex("[^a-z/]"), "")
+        return unit.trim().lowercase()
     }
 }

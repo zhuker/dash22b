@@ -44,6 +44,10 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+    sourceSets {
+        getByName("test").assets.srcDirs(files("src/main/assets"))
+        getByName("androidTest").assets.srcDirs(files("src/main/assets"))
+    }
 }
 
 dependencies {

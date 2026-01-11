@@ -1,11 +1,13 @@
 package com.example.dash22b.data
 
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Test
 import java.io.ByteArrayInputStream
+import java.io.File
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
 
@@ -14,7 +16,8 @@ class LogFileDataSourceTest {
     // 1. Fake AssetLoader
     class FakeAssetLoader(private val fileContent: Map<String, String>) : AssetLoader {
         override fun open(fileName: String): InputStream {
-            val content = fileContent[fileName] ?: throw IllegalArgumentException("File not found: $fileName")
+            val content =
+                fileContent[fileName] ?: throw IllegalArgumentException("File not found: $fileName")
             return ByteArrayInputStream(content.toByteArray(StandardCharsets.UTF_8))
         }
     }
@@ -99,5 +102,60 @@ class LogFileDataSourceTest {
         // rpm is ValueWithUnit.
         assertEquals("Common Field RPM", 3200, engineData.rpm.value.toInt())
         assertEquals("Common Field Speed", 60, engineData.speed.value.toInt())
+    }
+
+    class DirAssetLoader(val dir: File) : AssetLoader {
+        override fun open(fileName: String): InputStream {
+            return File(dir, fileName).inputStream()
+        }
+    }
+
+    @Test
+    fun testFindParams() {
+        val assetLoader = DirAssetLoader(File("src/main/assets"))
+        val dataSource = LogFileDataSource(assetLoader)
+        val headers2defs = sortedMapOf<String, Pair<String, ParameterDefinition>>()
+        File("src/main/assets/sampleLogs").listFiles().orEmpty().filter { it.name.endsWith(".csv") }
+            .forEach {
+                println(it.name)
+                val headers = it.reader(Charsets.ISO_8859_1).useLines { lines -> lines.first() }
+                println(headers)
+                headers.split(",").forEach { header ->
+                    println(header)
+                    val (hdr, unit, def) = dataSource.findParameterDefinition(header)
+
+                    if (hdr != "Time" && !hdr.contains("AP Info")) {
+                        assertNotNull(def)
+                        if (!headers2defs.containsKey(hdr)) {
+                            println("Header: $hdr, Unit: $unit, ${def!!.unit}, Def: ${def.name}")
+                            headers2defs[hdr] = unit to def
+                        }
+                    }
+                }
+            }
+        headers2defs.forEach { (hdr, pair) ->
+            val (hdrUnit, def) = pair
+            println("$hdr $hdrUnit-${def.unit} ${def.name}")
+        }
+
+    }
+
+    @Test
+    fun testParseAll() {
+        val assetLoader = DirAssetLoader(File("src/main/assets"))
+        ParameterRegistry.initialize(assetLoader)
+        val dataSource = LogFileDataSource(assetLoader)
+        File("src/main/assets/sampleLogs").listFiles().orEmpty().filter { it.name.endsWith(".csv") }.forEach {
+            println(it.name)
+            val list = runBlocking { dataSource.parseLogFile("sampleLogs/${it.name}").toList() }
+            println("${it.name} ${list.size}")
+            val ed = list.first()
+            ed.values.forEach { (k, v) ->
+                val def = ParameterRegistry.getDefinition(k)!!
+                val converted = UnitConverter.convert(v.value, v.unit, def.unit)
+                println("$k ${v.value}${v.unit} == $converted${def.unit} ${def.name}")
+
+            }
+        }
     }
 }
