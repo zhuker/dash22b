@@ -292,6 +292,10 @@ fun OtherContent(engineData: EngineData) {
 @Composable
 fun TpmsValueDisplay(state: com.example.dash22b.data.TpmsState?, label: String) {
     if (state == null) return
+    val pressureText = if (state.isStale) "--" else String.format("%.1f", state.pressure.value)
+    val tempText = if (state.isStale) "NA" else String.format("%.0f${state.temp.unit}", state.temp.value)
+    val contentColor = if (state.isStale) Color.Gray else Color.White
+
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         // Label (e.g. FL)
         Text(
@@ -301,13 +305,13 @@ fun TpmsValueDisplay(state: com.example.dash22b.data.TpmsState?, label: String) 
         )
         // Pressure (Big)
         Text(
-            text = String.format("%.1f", state.pressure.value),
+            text = pressureText,
             style = MaterialTheme.typography.displayMedium.copy(fontWeight =androidx.compose.ui.text.font.FontWeight.Bold),
-            color = Color.White
+            color = contentColor
         )
         // Temp (Smaller)
         Text(
-            text = String.format("%.0f${state.temp.unit}", state.temp.value), // Usually temp is int-ish in display
+            text = tempText,
             style = MaterialTheme.typography.titleLarge,
             color = Color.Gray
         )

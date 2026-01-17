@@ -15,22 +15,34 @@ import com.example.dash22b.MainActivity
 import com.example.dash22b.R
 import com.example.dash22b.data.TpmsDataSource
 import com.example.dash22b.data.TpmsRepository
+import com.example.dash22b.data.TpmsState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class TpmsService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
     private lateinit var tpmsDataSource: TpmsDataSource
+    
+    // Local mutable state
+    private val currentTpmsMap = mutableMapOf<String, TpmsState>(
+        "FL" to TpmsState(),
+        "FR" to TpmsState(),
+        "RL" to TpmsState(),
+        "RR" to TpmsState()
+    )
 
     companion object {
         const val CHANNEL_ID = "TpmsChannel"
         const val NOTIFICATION_ID = 1
+        const val STALE_TIMEOUT_MS = 42000L
     }
 
     override fun onBind(intent: Intent?): IBinder? {
@@ -44,30 +56,65 @@ class TpmsService : Service() {
 
         tpmsDataSource = TpmsDataSource(this)
         startScanning()
+        startStaleChecker()
     }
 
     private fun startScanning() {
         serviceScope.launch {
-            tpmsDataSource.getTpmsData()
-                .onEach { stateMap ->
-                    TpmsRepository.updateState(stateMap)
-                    updateNotification(stateMap)
+            tpmsDataSource.getTpmsUpdates()
+                .collect { update ->
+                    synchronized(currentTpmsMap) {
+                        currentTpmsMap[update.position] = update.state
+                        // Update Repository
+                        TpmsRepository.updateState(currentTpmsMap.toMap())
+                        updateNotification()
+                    }
                 }
-                .collect()
+        }
+    }
+    
+    private fun startStaleChecker() {
+        serviceScope.launch {
+            while (isActive) {
+                delay(5000) // Check every 5s
+                var changed = false
+                val now = System.currentTimeMillis()
+                
+                synchronized(currentTpmsMap) {
+                    for ((key, state) in currentTpmsMap) {
+                        // If it has ever received data (timestamp > 0) AND it is now old
+                        if (state.timestamp > 0 && (now - state.timestamp > STALE_TIMEOUT_MS)) {
+                            if (!state.isStale) {
+                                currentTpmsMap[key] = state.copy(isStale = true)
+                                changed = true
+                            }
+                        }
+                    }
+                    if (changed) {
+                         TpmsRepository.updateState(currentTpmsMap.toMap())
+                         updateNotification()
+                    }
+                }
+            }
         }
     }
 
-    private fun updateNotification(stateMap: Map<String, com.example.dash22b.data.TpmsState>) {
-        val validPressures = stateMap.values
-            .map { it.pressure.value }
-            .filter { it > 0 } // Filter out uninitialized calls if any
+    private fun updateNotification() {
+        // Calculate min/max from non-stale data
+        val activeStates = currentTpmsMap.values.filter { !it.isStale && it.timestamp > 0 }
 
-        val contentText = if (validPressures.isNotEmpty()) {
-            val min = validPressures.minOrNull() ?: 0f
-            val max = validPressures.maxOrNull() ?: 0f
+        val contentText = if (activeStates.isNotEmpty()) {
+            val min = activeStates.minOf { it.pressure.value }
+            val max = activeStates.maxOf { it.pressure.value }
             String.format("Min: %.1f bar, Max: %.1f bar", min, max)
         } else {
-            "Scanning for tire pressure..."
+             // If we have some data but all stale -> Signal Lost
+             // If we never had data -> Scanning...
+             if (currentTpmsMap.values.any { it.timestamp > 0 }) {
+                 "Signal Lost / NA"
+             } else {
+                 "Scanning for tire pressure..."
+             }
         }
 
         val notification = buildNotification(contentText)
@@ -101,7 +148,7 @@ class TpmsService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("TPMS Monitor")
             .setContentText(contentText)
-            .setSmallIcon(R.drawable.ic_launcher_foreground) // Try to use a valid icon, might need fallback
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentIntent(pendingIntent)
             .setOnlyAlertOnce(true)
             .setOngoing(true)
