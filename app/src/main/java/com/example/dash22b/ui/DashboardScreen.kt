@@ -112,10 +112,9 @@ fun DashboardScreen() {
     // Use the concrete Android implementation here at the UI boundary
     val assetLoader = remember { com.example.dash22b.data.AndroidAssetLoader(context) }
     val dataSource = remember { LogFileDataSource(assetLoader) }
-    val tpmsSource = remember { com.example.dash22b.data.TpmsDataSource(context) }
-    // Fix: Remember the flow to avoid restarting scanning on every recomposition
-    val tpmsFlow = remember(tpmsSource) { tpmsSource.getTpmsData() }
-    val tpmsData by tpmsFlow.collectAsState(initial = emptyMap())
+    
+    // Use Repository for TPMS data (populated by Background Service)
+    val tpmsData by com.example.dash22b.data.TpmsRepository.tpmsState.collectAsState()
     
     val dataFlow = remember(dataSource) { dataSource.getEngineData() }
     val engineDataRaw by dataFlow.collectAsState(initial = EngineData())

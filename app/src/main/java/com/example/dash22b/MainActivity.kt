@@ -19,20 +19,40 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Request Bluetooth permissions for Android 12+
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
             val requestPermissionLauncher = registerForActivityResult(
                 androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
             ) { permissions ->
-                // Handle permission granted/rejected status here if needed
+                val allGranted = permissions.entries.all { it.value }
+                if (allGranted) {
+                    val intent = android.content.Intent(this, com.example.dash22b.service.TpmsService::class.java)
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                        startForegroundService(intent)
+                    } else {
+                        startService(intent)
+                    }
+                }
             }
-            requestPermissionLauncher.launch(
-                arrayOf(
-                    android.Manifest.permission.BLUETOOTH_SCAN,
-                    android.Manifest.permission.BLUETOOTH_CONNECT,
-                    android.Manifest.permission.ACCESS_FINE_LOCATION
-                )
+            
+            val permissionsToRequest = mutableListOf(
+                android.Manifest.permission.BLUETOOTH_SCAN,
+                android.Manifest.permission.BLUETOOTH_CONNECT,
+                android.Manifest.permission.ACCESS_FINE_LOCATION
             )
+            
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                permissionsToRequest.add(android.Manifest.permission.POST_NOTIFICATIONS)
+            }
+            
+            requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
+        } else {
+             // For older Android versions, just start it
+             val intent = android.content.Intent(this, com.example.dash22b.service.TpmsService::class.java)
+             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                 startForegroundService(intent)
+             } else {
+                 startService(intent)
+             }
         }
         
         enableEdgeToEdge()
