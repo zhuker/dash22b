@@ -16,6 +16,7 @@ import com.example.dash22b.R
 import com.example.dash22b.data.TpmsDataSource
 import com.example.dash22b.data.TpmsRepository
 import com.example.dash22b.data.TpmsState
+import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -61,15 +62,25 @@ class TpmsService : Service() {
 
     private fun startScanning() {
         serviceScope.launch {
-            tpmsDataSource.getTpmsUpdates()
-                .collect { update ->
-                    synchronized(currentTpmsMap) {
-                        currentTpmsMap[update.position] = update.state
-                        // Update Repository
-                        TpmsRepository.updateState(currentTpmsMap.toMap())
-                        updateNotification()
-                    }
+            while (isActive) {
+                Log.d("TpmsService", "Starting periodic BLE scan")
+                val scanJob = launch {
+                    tpmsDataSource.getTpmsUpdates()
+                        .collect { update ->
+                            synchronized(currentTpmsMap) {
+                                currentTpmsMap[update.position] = update.state
+                                // Update Repository
+                                TpmsRepository.updateState(currentTpmsMap.toMap())
+                                updateNotification()
+                            }
+                        }
                 }
+                // Restart scan every 2 minutes to avoid Android "30 minutes max" throttle
+                // and other manufacturer-specific aggressive battery optimizations for background BLE
+                delay(120000) 
+                scanJob.cancel()
+                Log.d("TpmsService", "Stopping periodic BLE scan (timeout reached)")
+            }
         }
     }
     

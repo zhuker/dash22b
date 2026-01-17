@@ -87,7 +87,7 @@ class TpmsDataSource(private val context: Context) {
 
         try {
             val settings = android.bluetooth.le.ScanSettings.Builder()
-                .setScanMode(android.bluetooth.le.ScanSettings.SCAN_MODE_LOW_LATENCY)
+                .setScanMode(android.bluetooth.le.ScanSettings.SCAN_MODE_BALANCED)
                 .build()
             scanner.startScan(null, settings, callback)
         } catch (e: Exception) {
