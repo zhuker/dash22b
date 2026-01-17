@@ -45,4 +45,14 @@ data class EngineData(
     // History (storing raw values for now, assuming unit matches the main field)
     val rpmHistory: List<Float> = emptyList(),
     val boostHistory: List<Float> = emptyList(),
+
+    // TPMS Data
+    val tpms: Map<String, TpmsState> = emptyMap()
+)
+
+data class TpmsState(
+    val pressure: ValueWithUnit = ValueWithUnit(0f, "bar"),
+    val temp: ValueWithUnit = ValueWithUnit(0f, "C"),
+    val batteryLow: Boolean = false,
+    val leaking: Boolean = false
 )

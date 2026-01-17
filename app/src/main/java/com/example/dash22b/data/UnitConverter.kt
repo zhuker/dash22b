@@ -32,7 +32,10 @@ object UnitConverter {
             (from == "mph" && to == "km/h") -> value * 1.60934f
             (from == "km/h" && to == "mph") -> value / 1.60934f
             
-            else -> throw Exception("unknown conversion from $from to $to")
+            else -> {
+//                println("Unknown conversion from '$fromUnit' to '$toUnit'")
+                return value
+            }
         }
     }
 

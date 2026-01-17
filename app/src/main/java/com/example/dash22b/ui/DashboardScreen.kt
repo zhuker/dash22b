@@ -112,8 +112,17 @@ fun DashboardScreen() {
     // Use the concrete Android implementation here at the UI boundary
     val assetLoader = remember { com.example.dash22b.data.AndroidAssetLoader(context) }
     val dataSource = remember { LogFileDataSource(assetLoader) }
+    val tpmsSource = remember { com.example.dash22b.data.TpmsDataSource(context) }
+    // Fix: Remember the flow to avoid restarting scanning on every recomposition
+    val tpmsFlow = remember(tpmsSource) { tpmsSource.getTpmsData() }
+    val tpmsData by tpmsFlow.collectAsState(initial = emptyMap())
+    
     val dataFlow = remember(dataSource) { dataSource.getEngineData() }
-    val engineData by dataFlow.collectAsState(initial = EngineData())
+    val engineDataRaw by dataFlow.collectAsState(initial = EngineData())
+
+    val engineData = remember(engineDataRaw, tpmsData) {
+        engineDataRaw.copy(tpms = tpmsData)
+    }
     
     // State for Navigation
     var currentMode by remember { mutableStateOf(ScreenMode.GAUGES) }
@@ -177,7 +186,7 @@ fun DashboardScreen() {
                             onGaugeLongClick = { id -> showDialogForId = id }
                         )
                         ScreenMode.GRAPHS -> GraphsContent(engineData) // Graphs reuse for now
-                        ScreenMode.OTHER -> Text("Other Settings", color = Color.White)
+                        ScreenMode.OTHER -> OtherContent(engineData)
                     }
                 }
                 
@@ -217,7 +226,7 @@ fun DashboardScreen() {
                             onGaugeLongClick = { id -> showDialogForId = id }
                         )
                         ScreenMode.GRAPHS -> GraphsContent(engineData)
-                        ScreenMode.OTHER -> Text("Other Settings", color = Color.White)
+                        ScreenMode.OTHER -> OtherContent(engineData)
                     }
                     
                     // Bottom Status Bar
@@ -228,6 +237,81 @@ fun DashboardScreen() {
                 }
             }
         }
+    }
+}
+
+@Composable
+fun OtherContent(engineData: EngineData) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        // Car Image
+        androidx.compose.foundation.Image(
+            painter = androidx.compose.ui.res.painterResource(id = com.example.dash22b.R.drawable.car_tpms),
+            contentDescription = "Car TPMS",
+            modifier = Modifier
+                .fillMaxHeight(0.8f) // Scale to fit nicely
+                .padding(16.dp),
+            contentScale = androidx.compose.ui.layout.ContentScale.Fit
+        )
+
+        // TPMS Values - Positioned roughly around the car (Conceptually)
+        // Since we don't have exact pixel coordinates, we'll use a Column/Row box structure
+        // Or absolute offsets if we want to be precise, but relative layout is safer.
+        // Let's use a Column with Rows for FL/FR and RL/RR
+        
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+             // Top Row (FL, FR)
+             Row(
+                 modifier = Modifier
+                 .fillMaxWidth()
+                 .padding(top = 40.dp, start = 20.dp, end = 20.dp), // Adjust padding as needed
+                 horizontalArrangement = Arrangement.SpaceBetween
+             ) {
+                 TpmsValueDisplay(state = engineData.tpms["RL"], label = "RL")
+                 TpmsValueDisplay(state = engineData.tpms["RR"], label = "RR")
+             }
+             
+             // Bottom Row (RL, RR)
+             Row(
+                 modifier = Modifier
+                 .fillMaxWidth()
+                 .padding(bottom = 60.dp, start = 20.dp, end = 20.dp), // Adjust padding as needed
+                 horizontalArrangement = Arrangement.SpaceBetween
+             ) {
+                 TpmsValueDisplay(state = engineData.tpms["FL"], label = "FL")
+                 TpmsValueDisplay(state = engineData.tpms["FR"], label = "FR")
+             }
+        }
+    }
+}
+
+@Composable
+fun TpmsValueDisplay(state: com.example.dash22b.data.TpmsState?, label: String) {
+    if (state == null) return
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // Label (e.g. FL)
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = Color.LightGray
+        )
+        // Pressure (Big)
+        Text(
+            text = String.format("%.1f", state.pressure.value),
+            style = MaterialTheme.typography.displayMedium.copy(fontWeight =androidx.compose.ui.text.font.FontWeight.Bold),
+            color = Color.White
+        )
+        // Temp (Smaller)
+        Text(
+            text = String.format("%.0f${state.temp.unit}", state.temp.value), // Usually temp is int-ish in display
+            style = MaterialTheme.typography.titleLarge,
+            color = Color.Gray
+        )
     }
 }
 
