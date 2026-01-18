@@ -2,6 +2,7 @@ package com.example.dash22b
 
 import android.app.Application
 import android.util.Log
+import com.example.dash22b.di.AppContainer
 import com.example.dash22b.obd.SsmSerialManager
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -13,8 +14,14 @@ import java.util.Locale
 
 class DashApplication : Application() {
 
+    lateinit var appContainer: AppContainer
+        private set
+
     override fun onCreate() {
         super.onCreate()
+
+        // Initialize dependency container
+        appContainer = AppContainer(this)
 
         // Rotate logs before initializing logging
         rotateLogs()

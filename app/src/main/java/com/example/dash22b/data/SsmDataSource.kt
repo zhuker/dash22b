@@ -29,11 +29,6 @@ class SsmDataSource(private val context: Context) {
     private val serialManager = SsmSerialManager(context)
     private val parameters = SsmHardcodedParameters.parameters
 
-    init {
-        // Initialize parameter registry with hardcoded SSM parameters
-        ParameterRegistry.fromHardcodedSsm()
-    }
-
     /**
      * Returns a Flow that continuously polls the ECU for real-time data.
      * Handles connection retry with exponential backoff.

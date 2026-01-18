@@ -53,8 +53,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
-import com.example.dash22b.data.ParameterRegistry
 import com.example.dash22b.data.SsmDataSource
+import com.example.dash22b.di.LocalParameterRegistry
+import com.example.dash22b.di.LocalTpmsRepository
 import com.example.dash22b.service.TpmsService
 import timber.log.Timber
 
@@ -72,7 +73,8 @@ fun ParameterSelectionDialog(
     onDismiss: () -> kotlin.Unit,
     onParameterSelected: (String) -> kotlin.Unit
 ) {
-    val options = remember { ParameterRegistry.getAllDefinitions() }
+    val parameterRegistry = LocalParameterRegistry.current
+    val options = remember(parameterRegistry) { parameterRegistry.getAllDefinitions() }
     
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -108,12 +110,11 @@ fun ParameterSelectionDialog(
 fun DashboardScreen() {
     // State for Data
     val context = androidx.compose.ui.platform.LocalContext.current
-    // Use the concrete Android implementation here at the UI boundary
-//    val assetLoader = remember { com.example.dash22b.data.AndroidAssetLoader(context) }
     val dataSource = remember { SsmDataSource(context) }
-    
+
     // Use Repository for TPMS data (populated by Background Service)
-    val tpmsData by com.example.dash22b.data.TpmsRepository.tpmsState.collectAsState()
+    val tpmsRepository = LocalTpmsRepository.current
+    val tpmsData by tpmsRepository.tpmsState.collectAsState()
     
     val dataFlow = remember(dataSource) { dataSource.getEngineData() }
     val engineDataRaw by dataFlow.collectAsState(initial = EngineData())
@@ -438,9 +439,11 @@ fun DynamicCircularGauge(
     isBig: Boolean = false,
     onLongClick: () -> kotlin.Unit
 ) {
+    val parameterRegistry = LocalParameterRegistry.current
+
     // Look up definition
     var key = config.parameterName
-    val def = ParameterRegistry.getDefinition(key)
+    val def = parameterRegistry.getDefinition(key)
     key = def?.name ?: key
     val vwu =
     if (!data.values.containsKey(key)) {

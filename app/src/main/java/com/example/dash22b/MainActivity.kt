@@ -19,6 +19,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import androidx.compose.runtime.CompositionLocalProvider
+import com.example.dash22b.di.LocalParameterRegistry
+import com.example.dash22b.di.LocalTpmsRepository
 import timber.log.Timber
 import kotlin.system.exitProcess
 
@@ -81,10 +84,17 @@ class MainActivity : ComponentActivity() {
         
         enableEdgeToEdge()
         setContent {
-            Dash22bTheme {
-                // A surface container using the 'background' color from the theme
-                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    DashboardScreen()
+            val container = (application as DashApplication).appContainer
+
+            CompositionLocalProvider(
+                LocalParameterRegistry provides container.parameterRegistry,
+                LocalTpmsRepository provides container.tpmsRepository
+            ) {
+                Dash22bTheme {
+                    // A surface container using the 'background' color from the theme
+                    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                        DashboardScreen()
+                    }
                 }
             }
         }

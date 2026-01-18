@@ -11,6 +11,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import com.example.dash22b.DashApplication
 import com.example.dash22b.MainActivity
 import com.example.dash22b.R
 import com.example.dash22b.data.TpmsDataSource
@@ -31,7 +32,8 @@ class TpmsService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
     private lateinit var tpmsDataSource: TpmsDataSource
-    
+    private lateinit var tpmsRepository: TpmsRepository
+
     // Local mutable state
     private val currentTpmsMap = mutableMapOf<String, TpmsState>(
         "FL" to TpmsState(),
@@ -57,6 +59,9 @@ class TpmsService : Service() {
         super.onCreate()
         createNotificationChannel()
         startForegroundService()
+
+        // Get repository from AppContainer
+        tpmsRepository = (application as DashApplication).appContainer.tpmsRepository
 
         tpmsDataSource = TpmsDataSource(this)
         startScanning()
@@ -93,7 +98,7 @@ class TpmsService : Service() {
                             synchronized(currentTpmsMap) {
                                 currentTpmsMap[update.position] = update.state
                                 // Update Repository
-                                TpmsRepository.updateState(currentTpmsMap.toMap())
+                                tpmsRepository.updateState(currentTpmsMap.toMap())
                                 updateNotification()
                             }
                         }
@@ -126,7 +131,7 @@ class TpmsService : Service() {
                         }
                     }
                     if (changed) {
-                         TpmsRepository.updateState(currentTpmsMap.toMap())
+                         tpmsRepository.updateState(currentTpmsMap.toMap())
                          updateNotification()
                     }
                 }

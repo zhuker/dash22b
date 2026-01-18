@@ -6,11 +6,10 @@ import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
 import java.io.BufferedReader
 
-class LogFileDataSource(private val assetLoader: AssetLoader) {
-    init {
-        // Initialize Registry
-        ParameterRegistry.initialize(assetLoader)
-    }
+class LogFileDataSource(
+    private val assetLoader: AssetLoader,
+    private val parameterRegistry: ParameterRegistry
+) {
 
     fun getEngineData(): Flow<EngineData> {
         return parseLogFile(exampleLogFileName)
@@ -162,7 +161,7 @@ class LogFileDataSource(private val assetLoader: AssetLoader) {
         val cleanHeader = match?.groupValues?.get(1)?.trim() ?: header.trim()
         val logUnit = match?.groupValues?.get(2)?.trim() ?: ""
 
-        val def = ParameterRegistry.getDefinition(cleanHeader)
+        val def = parameterRegistry.getDefinition(cleanHeader)
 
         return Triple(cleanHeader, logUnit, def)
     }

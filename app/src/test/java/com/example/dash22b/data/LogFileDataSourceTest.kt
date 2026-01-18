@@ -55,7 +55,8 @@ class LogFileDataSourceTest {
         )
 
         val assetLoader = FakeAssetLoader(fakeFiles)
-        val dataSource = LogFileDataSource(assetLoader)
+        val parameterRegistry = ParameterRegistry.fromCsv(assetLoader)
+        val dataSource = LogFileDataSource(assetLoader, parameterRegistry)
 
         // 3. Execution
         val engineData = dataSource.getEngineData().first()
@@ -113,7 +114,8 @@ class LogFileDataSourceTest {
     @Test
     fun testFindParams() {
         val assetLoader = DirAssetLoader(File("src/main/assets"))
-        val dataSource = LogFileDataSource(assetLoader)
+        val parameterRegistry = ParameterRegistry.fromCsv(assetLoader)
+        val dataSource = LogFileDataSource(assetLoader, parameterRegistry)
         val headers2defs = sortedMapOf<String, Pair<String, ParameterDefinition>>()
         File("src/main/assets/sampleLogs").listFiles().orEmpty().filter { it.name.endsWith(".csv") }
             .forEach {
@@ -143,15 +145,15 @@ class LogFileDataSourceTest {
     @Test
     fun testParseAll() {
         val assetLoader = DirAssetLoader(File("src/main/assets"))
-        ParameterRegistry.initialize(assetLoader)
-        val dataSource = LogFileDataSource(assetLoader)
+        val parameterRegistry = ParameterRegistry.fromCsv(assetLoader)
+        val dataSource = LogFileDataSource(assetLoader, parameterRegistry)
         File("src/main/assets/sampleLogs").listFiles().orEmpty().filter { it.name.endsWith(".csv") }.forEach {
             println(it.name)
             val list = runBlocking { dataSource.parseLogFile("sampleLogs/${it.name}").toList() }
             println("${it.name} ${list.size}")
             val ed = list.first()
             ed.values.forEach { (k, v) ->
-                val def = ParameterRegistry.getDefinition(k)!!
+                val def = parameterRegistry.getDefinition(k)!!
                 val converted = UnitConverter.convert(v.value, v.unit, def.unit)
                 println("$k ${v.value}${v.unit} == $converted${def.unit} ${def.name}")
 
