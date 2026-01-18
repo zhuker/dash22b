@@ -43,7 +43,7 @@ class TpmsService : Service() {
     companion object {
         const val CHANNEL_ID = "TpmsChannel"
         const val NOTIFICATION_ID = 1
-        const val STALE_TIMEOUT_MS = 60_000L
+        const val STALE_TIMEOUT_MS = 120_000L
         const val RESCAN_DELAY_MS = 120_000L
         const val ACTION_EXIT = "EXIT"
         const val ACTION_FORCE_EXIT = "com.example.dash22b.ACTION_FORCE_EXIT"
