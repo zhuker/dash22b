@@ -43,7 +43,10 @@ class TpmsService : Service() {
     companion object {
         const val CHANNEL_ID = "TpmsChannel"
         const val NOTIFICATION_ID = 1
-        const val STALE_TIMEOUT_MS = 42000L
+        const val STALE_TIMEOUT_MS = 60_000L
+        const val RESCAN_DELAY_MS = 120_000L
+        const val ACTION_EXIT = "EXIT"
+        const val ACTION_FORCE_EXIT = "com.example.dash22b.ACTION_FORCE_EXIT"
     }
 
     override fun onBind(intent: Intent?): IBinder? {
@@ -58,6 +61,26 @@ class TpmsService : Service() {
         tpmsDataSource = TpmsDataSource(this)
         startScanning()
         startStaleChecker()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_EXIT) {
+            Log.d("TpmsService", "Exit action received. Shutting down...")
+            // Notify UI to close - Explicit Broadcast
+            val broadcastIntent = Intent(ACTION_FORCE_EXIT)
+            broadcastIntent.setPackage(packageName)
+            sendBroadcast(broadcastIntent)
+            
+            // Stop Service
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                stopForeground(true)
+            }
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        return super.onStartCommand(intent, flags, startId)
     }
 
     private fun startScanning() {
@@ -77,7 +100,7 @@ class TpmsService : Service() {
                 }
                 // Restart scan every 2 minutes to avoid Android "30 minutes max" throttle
                 // and other manufacturer-specific aggressive battery optimizations for background BLE
-                delay(120000) 
+                delay(RESCAN_DELAY_MS) 
                 scanJob.cancel()
                 Log.d("TpmsService", "Stopping periodic BLE scan (timeout reached)")
             }
@@ -96,6 +119,7 @@ class TpmsService : Service() {
                         // If it has ever received data (timestamp > 0) AND it is now old
                         if (state.timestamp > 0 && (now - state.timestamp > STALE_TIMEOUT_MS)) {
                             if (!state.isStale) {
+                                Log.d("TpmsService", "Marking $key as stale")
                                 currentTpmsMap[key] = state.copy(isStale = true)
                                 changed = true
                             }
@@ -117,12 +141,17 @@ class TpmsService : Service() {
         val contentText = if (activeStates.isNotEmpty()) {
             val min = activeStates.minOf { it.pressure.value }
             val max = activeStates.maxOf { it.pressure.value }
-            String.format("Min: %.1f bar, Max: %.1f bar", min, max)
+            
+            // Calculate Average RSSI
+            val avgRssi = activeStates.map { it.rssi }.average().toInt()
+            
+            String.format("%.1f-%.1f bar, Signal: %d dBm", min, max, avgRssi)
         } else {
              // If we have some data but all stale -> Signal Lost
              // If we never had data -> Scanning...
              if (currentTpmsMap.values.any { it.timestamp > 0 }) {
-                 "Signal Lost / NA"
+                 val lastRssi = currentTpmsMap.values.map { it.rssi }.average().toInt()
+                 "Signal Lost / NA (Last: $lastRssi dBm)"
              } else {
                  "Scanning for tire pressure..."
              }
@@ -156,11 +185,20 @@ class TpmsService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val exitIntent = Intent(this, TpmsService::class.java).apply {
+            action = ACTION_EXIT
+        }
+        val exitPendingIntent = PendingIntent.getService(
+            this, 0, exitIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("TPMS Monitor")
             .setContentText(contentText)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentIntent(pendingIntent)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Exit", exitPendingIntent)
             .setOnlyAlertOnce(true)
             .setOngoing(true)
             .build()

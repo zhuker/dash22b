@@ -56,5 +56,6 @@ data class TpmsState(
     val batteryLow: Boolean = false,
     val leaking: Boolean = false,
     val timestamp: Long = 0L,
-    val isStale: Boolean = true
+    val isStale: Boolean = true,
+    val rssi: Int = 0
 )

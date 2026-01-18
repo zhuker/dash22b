@@ -15,9 +15,33 @@ import com.example.dash22b.ui.DashboardScreen
 
 import androidx.activity.enableEdgeToEdge
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.util.Log
+import kotlin.system.exitProcess
+
 class MainActivity : ComponentActivity() {
+
+    private val exitReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == com.example.dash22b.service.TpmsService.ACTION_FORCE_EXIT) {
+                Log.d("MainActivity", "Received ACTION_FORCE_EXIT intent")
+                finishAndRemoveTask()
+                exitProcess(0)
+            }
+        }
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        val filter = IntentFilter(com.example.dash22b.service.TpmsService.ACTION_FORCE_EXIT)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(exitReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(exitReceiver, filter)
+        }
         
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
             val requestPermissionLauncher = registerForActivityResult(
@@ -63,6 +87,15 @@ class MainActivity : ComponentActivity() {
                     DashboardScreen()
                 }
             }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            unregisterReceiver(exitReceiver)
+        } catch (e: Exception) {
+            // Ignore if not registered
         }
     }
 }

@@ -55,7 +55,7 @@ class TpmsDataSource(private val context: Context) {
                                     deviceName.contains("TPMS4") -> "RR"
                                     else -> "FL"
                                 }
-                                Log.d("TpmsDataSource", "Parsed $deviceName($pos): $p bar, $t C")
+                                Log.d("TpmsDataSource", "Parsed $deviceName($pos): $p bar, $t C, RSSI: ${scanResult.rssi}")
 
                                 val newState = TpmsState(
                                     pressure = ValueWithUnit(p, "bar"),
@@ -63,7 +63,8 @@ class TpmsDataSource(private val context: Context) {
                                     batteryLow = b,
                                     leaking = l,
                                     timestamp = System.currentTimeMillis(),
-                                    isStale = false
+                                    isStale = false,
+                                    rssi = scanResult.rssi
                                 )
                                 
                                 trySend(TpmsUpdate(pos, newState))
@@ -89,7 +90,14 @@ class TpmsDataSource(private val context: Context) {
             val settings = android.bluetooth.le.ScanSettings.Builder()
                 .setScanMode(android.bluetooth.le.ScanSettings.SCAN_MODE_BALANCED)
                 .build()
-            scanner.startScan(null, settings, callback)
+            
+            // Filter for Manufacturer ID 0x0100 (256)
+            // Passing empty data array matches any data content for this ID
+            val filter = android.bluetooth.le.ScanFilter.Builder()
+                .setManufacturerData(256, byteArrayOf())
+                .build()
+                
+            scanner.startScan(listOf(filter), settings, callback)
         } catch (e: Exception) {
             Log.e("TpmsDataSource", "Error starting scan", e)
         }

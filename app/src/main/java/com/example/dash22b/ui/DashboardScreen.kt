@@ -58,6 +58,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.TextButton
 import com.example.dash22b.data.ParameterRegistry
+import com.example.dash22b.service.TpmsService
 
 enum class ScreenMode {
     GAUGES, GRAPHS, OTHER
@@ -292,9 +293,14 @@ fun OtherContent(engineData: EngineData) {
 @Composable
 fun TpmsValueDisplay(state: com.example.dash22b.data.TpmsState?, label: String) {
     if (state == null) return
-    val pressureText = if (state.isStale) "--" else String.format("%.1f", state.pressure.value)
-    val tempText = if (state.isStale) "NA" else String.format("%.0f${state.temp.unit}", state.temp.value)
-    val contentColor = if (state.isStale) Color.Gray else Color.White
+    
+    // Calculate staleness locally so UI updates even if Service stops
+    val timeSinceUpdate = System.currentTimeMillis() - state.timestamp
+    val isLocallyStale = timeSinceUpdate > TpmsService.STALE_TIMEOUT_MS
+    
+    val pressureText = if (isLocallyStale) "--" else String.format("%.1f", state.pressure.value)
+    val tempText = if (isLocallyStale) "NA" else String.format("%.0f${state.temp.unit}", state.temp.value)
+    val contentColor = if (isLocallyStale) Color.Gray else Color.White
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         // Label (e.g. FL)
@@ -306,7 +312,7 @@ fun TpmsValueDisplay(state: com.example.dash22b.data.TpmsState?, label: String) 
         // Pressure (Big)
         Text(
             text = pressureText,
-            style = MaterialTheme.typography.displayMedium.copy(fontWeight =androidx.compose.ui.text.font.FontWeight.Bold),
+            style = MaterialTheme.typography.displayMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
             color = contentColor
         )
         // Temp (Smaller)
