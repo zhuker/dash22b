@@ -237,7 +237,146 @@ class SsmSerialManager(private val context: Context) {
      * Checks if currently connected.
      */
     fun isConnected(): Boolean = port != null
-    
+
+    /**
+     * Reads multiple parameters from the ECU in a single batched request.
+     * More efficient than individual reads.
+     *
+     * @param parameters List of SSM parameters to read
+     * @return Response packet containing parameter values, or null if failed
+     */
+    fun readParameters(parameters: List<SsmParameter>): SsmPacket? {
+        val port = this.port ?: run {
+            Timber.tag(TAG).e("Not connected")
+            return null
+        }
+
+        // Build read request packet
+        // For multi-byte parameters, request each byte separately
+        val data = mutableListOf<Byte>()
+        data.add(SsmPacket.CMD_READ_ADDRESS)  // Read command (0xA8)
+        data.add(0x00.toByte())                // Padding (single read mode)
+
+        // Add addresses for each byte to read
+        parameters.forEach { param ->
+            repeat(param.length) { i ->
+                val addr = param.address + i
+                data.add(((addr shr 16) and 0xFF).toByte())  // High byte
+                data.add(((addr shr 8) and 0xFF).toByte())   // Mid byte
+                data.add((addr and 0xFF).toByte())            // Low byte
+            }
+        }
+
+        val requestPacket = SsmPacket(
+            destination = SsmPacket.DESTINATION_ECU,
+            source = SsmPacket.SOURCE_DIAG,
+            data = data.toByteArray()
+        )
+
+        try {
+            // Send packet
+            val txBytes = requestPacket.toBytes()
+            Timber.tag(TAG).d("Sending read request: ${requestPacket.toHexString()}")
+            port.write(txBytes, WRITE_TIMEOUT_MS)
+
+            // Small delay after write
+            Thread.sleep(50)
+
+            // Read response - need to handle echo and possibly multiple reads
+            val rxBuffer = ByteArray(256)
+            val allReceivedData = mutableListOf<Byte>()
+
+            // Read all available data (echo + response)
+            // The echo might come in chunks, so read multiple times
+            var totalBytesRead = 0
+            var consecutiveEmptyReads = 0
+
+            while (consecutiveEmptyReads < 2 && totalBytesRead < 256) {
+                val bytesRead = port.read(rxBuffer, 200)  // Shorter timeout for subsequent reads
+                if (bytesRead > 0) {
+                    for (i in 0 until bytesRead) {
+                        allReceivedData.add(rxBuffer[i])
+                    }
+                    totalBytesRead += bytesRead
+                    consecutiveEmptyReads = 0
+                } else {
+                    consecutiveEmptyReads++
+                    if (totalBytesRead > 0) {
+                        // We got some data, give it a bit more time
+                        Thread.sleep(20)
+                    }
+                }
+            }
+
+            if (totalBytesRead < 3) {
+                Timber.tag(TAG).w("No response or incomplete header (got $totalBytesRead bytes)")
+                return null
+            }
+
+            val allBytes = allReceivedData.toByteArray()
+            logHex("All received data", allBytes)
+
+            // Find response header (skip echo)
+            // Response has: 0x80, 0xF0 (dest=diagnostic tool), 0x10 (src=ECU)
+            var responseStart = -1
+            for (i in 0 until allBytes.size - 3) {
+                if (allBytes[i] == SsmPacket.HEADER &&
+                    (allBytes[i + 1].toInt() and 0xFF) == SsmPacket.SOURCE_DIAG &&
+                    (allBytes[i + 2].toInt() and 0xFF) == SsmPacket.DESTINATION_ECU
+                ) {
+                    // Found response header
+                    responseStart = i
+                    break
+                }
+            }
+
+            if (responseStart == -1) {
+                Timber.tag(TAG).w("Could not find response header in received data")
+                return null
+            }
+
+            // Extract response packet
+            val responseData = mutableListOf<Byte>()
+            for (i in responseStart until allBytes.size) {
+                responseData.add(allBytes[i])
+            }
+
+            // Check if we have complete packet
+            if (responseData.size < 4) {
+                Timber.tag(TAG).w("Incomplete response header")
+                return null
+            }
+
+            val dataLen = responseData[3].toInt() and 0xFF
+            val expectedTotal = 5 + dataLen
+
+            if (responseData.size < expectedTotal) {
+                Timber.tag(TAG).w("Incomplete response: got ${responseData.size}, expected $expectedTotal")
+                return null
+            }
+
+            val responseBytes = responseData.toByteArray()
+            val response = SsmPacket.fromBytes(responseBytes)
+
+            if (response == null) {
+                Timber.tag(TAG).w("Failed to parse response packet")
+                return null
+            }
+
+            // Verify it's a read response
+            if (response.data.isNotEmpty() && response.data[0] != SsmPacket.RSP_READ_ADDRESS) {
+                Timber.tag(TAG).w("Unexpected response type: ${String.format("%02X", response.data[0])}")
+                return null
+            }
+
+            return response
+
+        } catch (e: Exception) {
+            Timber.tag(TAG).e(e, "Error reading parameters")
+            return null
+        }
+    }
+
     private fun logHex(label: String, bytes: ByteArray) {
         val hex = bytes.joinToString(" ") { String.format("%02X", it) }
         Timber.tag(TAG).d("$label (${bytes.size} bytes): $hex")

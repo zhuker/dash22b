@@ -58,7 +58,9 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.TextButton
 import com.example.dash22b.data.ParameterRegistry
+import com.example.dash22b.data.SsmDataSource
 import com.example.dash22b.service.TpmsService
+import timber.log.Timber
 
 enum class ScreenMode {
     GAUGES, GRAPHS, OTHER
@@ -111,8 +113,8 @@ fun DashboardScreen() {
     // State for Data
     val context = androidx.compose.ui.platform.LocalContext.current
     // Use the concrete Android implementation here at the UI boundary
-    val assetLoader = remember { com.example.dash22b.data.AndroidAssetLoader(context) }
-    val dataSource = remember { LogFileDataSource(assetLoader) }
+//    val assetLoader = remember { com.example.dash22b.data.AndroidAssetLoader(context) }
+    val dataSource = remember { SsmDataSource(context) }
     
     // Use Repository for TPMS data (populated by Background Service)
     val tpmsData by com.example.dash22b.data.TpmsRepository.tpmsState.collectAsState()
@@ -441,16 +443,24 @@ fun DynamicCircularGauge(
     onLongClick: () -> Unit
 ) {
     // Look up definition
-    val def = ParameterRegistry.getDefinition(config.parameterName)
-    val vwu = data.values[config.parameterName] ?: com.example.dash22b.data.ValueWithUnit(0f, "")
-    
+    var key = config.parameterName
+    val def = ParameterRegistry.getDefinition(key)
+    key = def?.name ?: key
+    val vwu =
+    if (!data.values.containsKey(key)) {
+        Timber.w("no value for '$key' '${def?.name}' ${data.values.keys}")
+        com.example.dash22b.data.ValueWithUnit(0f, "")
+    } else {
+        data.values[key]!!
+    }
+
     // Heuristic or Default Target Unit
     // If definition has a preferred unit, use it. Otherwise use the log unit.
     var targetUnit = def?.unit ?: vwu.unit
     
     // Overrides for specific gauges if registry defaults aren't what we want for display
     // e.g. defined as 'psi' but we want 'bar'
-    if (config.parameterName.contains("Boost") || config.parameterName.contains("Pressure")) {
+    if (key.contains("Boost") || key.contains("Pressure")) {
         targetUnit = "bar"
     } else if (def?.unit == "F" || vwu.unit.equals("F", ignoreCase = true)) {
         targetUnit = "C" // Always prefer C for display?
@@ -459,7 +469,7 @@ fun DynamicCircularGauge(
     val displayValue = com.example.dash22b.data.UnitConverter.convert(vwu.value, vwu.unit, targetUnit)
     
     // Fallbacks if not found
-    val label = def?.name ?: config.parameterName
+    val label = def?.name ?: key
     
     // Heuristic Min/Max
     val min = 0f 

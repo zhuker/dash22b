@@ -1,5 +1,6 @@
 package com.example.dash22b.data
 
+import timber.log.Timber
 import java.io.BufferedReader
 import java.io.InputStreamReader
 
@@ -33,11 +34,21 @@ data class ParameterDefinition(
 }
 
 object ParameterRegistry {
-    private val definitions = sortedMapOf<String, ParameterDefinition>()
+    private var definitions = sortedMapOf<String, ParameterDefinition>()
     private var isInitialized = false
 
+    /**
+     * Initialize with CSV data (existing behavior, for backward compatibility).
+     */
     fun initialize(assetLoader: AssetLoader) {
-        if (isInitialized) return
+        fromCsv(assetLoader)
+    }
+
+    /**
+     * Factory method: Load parameter definitions from CSV file (Accessport format).
+     */
+    fun fromCsv(assetLoader: AssetLoader): ParameterRegistry {
+        if (isInitialized) return this
 
         try {
             val inputStream = assetLoader.open("2005_STi_SSM_Parameters_Ranges.csv")
@@ -48,7 +59,7 @@ object ParameterRegistry {
 
             var line = reader.readLine()
             while (line != null) {
-                // CSV Parsing (Handling commas inside quotes is tricky with simple split, 
+                // CSV Parsing (Handling commas inside quotes is tricky with simple split,
                 // but this specific file seems to quote fields nicely)
                 // Let's use a regex or simple split if safe. The provided file has quotes.
                 // Regex for splitting by comma but ignoring commas in quotes:
@@ -78,6 +89,48 @@ object ParameterRegistry {
         } catch (e: Exception) {
             e.printStackTrace()
         }
+
+        return this
+    }
+
+    /**
+     * Factory method: Load hardcoded SSM parameters for live ECU data.
+     */
+    fun fromHardcodedSsm(): ParameterRegistry {
+        if (isInitialized) return this
+
+        // Convert SsmParameter objects to ParameterDefinition objects
+        com.example.dash22b.obd.SsmHardcodedParameters.parameters.forEach { ssmParam ->
+            val def = ParameterDefinition(
+                id = ssmParam.id,
+                type = "float",
+                unit = ssmParam.unit,
+                name = ssmParam.name,
+                description = ssmParam.id,
+                minExpected = "0",
+                maxExpected = "100",
+                accessportName = ssmParam.name
+            )
+            definitions[ssmParam.name.lowercase()] = def
+        }
+
+        isInitialized = true
+        return this
+    }
+
+    /**
+     * Factory method (future): Load parameter definitions from XML file.
+     * This will support logger_METRIC_EN_v370.xml format for 300+ parameters.
+     */
+    fun fromXml(inputStream: java.io.InputStream): ParameterRegistry {
+        if (isInitialized) return this
+
+        // TODO: Parse logger_METRIC_EN_v370.xml
+        // Build ParameterDefinition objects from XML parameter elements
+        // Support capability checking via ecubyteindex/ecubit attributes
+
+        isInitialized = true
+        return this
     }
 
     private val manualMap = mapOf(
@@ -91,6 +144,8 @@ object ParameterRegistry {
         "AF Sens 3 Volts" to "Rear O2 Volts",
         "Dyn Adv Mult" to "DAM", // Dynamic Advance Multiplier (Dyn Adv Mult) -> This is a learned correction applied to dynamic advance. The dynamic advance multiplier (DAM) is one of three knock responses. When conditions dictate that a change to the DAM is to occur, the current knock signal is referenced and the DAM is set to an initial value. If a knock event has occurred, the DAM will decrease. If there's no knock event, the DAM will increase (if no knock over a delay period). The DAM is reset to an initial value after an ECU reset or after a reflash. For the 02-05 WRX, the DAM ranges from 0 to 16 and its application to dynamic advance can be calculated as follows: dynamic advance map value * (DAM/16). For all other ECUs, the DAM ranges from 0 to 1 (decimal value) and is applied as follows: dynamic advance map value * DAM.
         "TD Boost Error" to "Boost Error",
+        "RPM" to "Engine Speed",
+        "Intake Temp" to "Intake Air Temp",
     )
 
     fun getDefinition(accessportName: String): ParameterDefinition? {
@@ -103,9 +158,9 @@ object ParameterRegistry {
                 ""
             }
         // Try exact match, then case insensitive
-//        if (!definitions.contains(key)) {
-//            println("oops cant find $key")
-//        }
+        if (!definitions.contains(key)) {
+            Timber.w("oops cant find '$key' for '$accessportName'")
+        }
         return definitions[key]
     }
 
