@@ -58,8 +58,8 @@ class TpmsDataSource(private val context: Context) {
                                 Timber.d("Parsed $deviceName($pos): $p bar, $t C, RSSI: ${scanResult.rssi}")
 
                                 val newState = TpmsState(
-                                    pressure = ValueWithUnit(p, "bar"),
-                                    temp = ValueWithUnit(t, "C"),
+                                    pressure = ValueWithUnit(p, Unit.BAR),
+                                    temp = ValueWithUnit(t, Unit.C),
                                     batteryLow = b,
                                     leaking = l,
                                     timestamp = System.currentTimeMillis(),

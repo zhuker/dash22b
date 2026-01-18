@@ -21,12 +21,13 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.dash22b.data.Unit
 
 @Composable
 fun LineGraph(
     dataPoints: List<Float>,
     label: String,
-    unit: String,
+    unit: Unit,
     color: Color,
     currentValue: Float,
     modifier: Modifier = Modifier,
@@ -93,7 +94,7 @@ fun LineGraph(
                     modifier = Modifier.weight(1f)
                 )
                  Text(
-                    text = unit,
+                    text = unit.displayName(),
                     color = Color.Gray,
                     style = MaterialTheme.typography.bodySmall,
                      modifier = Modifier.padding(end = 8.dp)

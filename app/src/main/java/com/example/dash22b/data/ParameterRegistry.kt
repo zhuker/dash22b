@@ -7,7 +7,7 @@ import java.io.InputStreamReader
 data class ParameterDefinition(
     val id: String,
     val type: String,
-    val unit: String,
+    val unit: Unit,
     val name: String, // Accessport Monitor Name (e.g., "RPM")
     val description: String,
     val minExpected: String,
@@ -69,7 +69,7 @@ object ParameterRegistry {
                     val def = ParameterDefinition(
                         id = tokens[0].trim(),
                         type = tokens[1].trim(),
-                        unit = tokens[2].trim(),
+                        unit = Unit.fromString(tokens[2].trim()),
                         name = tokens[3].replace("\"", "").trim(), // Original Name
                         description = tokens[4].replace("\"", "").trim(),
                         minExpected = tokens[5].trim(),

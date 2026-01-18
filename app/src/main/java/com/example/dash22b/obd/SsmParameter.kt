@@ -1,5 +1,7 @@
 package com.example.dash22b.obd
 
+import com.example.dash22b.data.Unit
+
 /**
  * SSM (Subaru Select Monitor) parameter definition.
  * Represents a single ECU parameter with its address, conversion expression, and metadata.
@@ -10,7 +12,7 @@ data class SsmParameter(
     val address: Int,         // 3-byte ECU memory address as Int (e.g., 0x00000E)
     val length: Int,          // Number of bytes to read (1, 2, or 4)
     val expression: String,   // Conversion expression (e.g., "x/4", "x-40")
-    val unit: String          // Display unit (e.g., "rpm", "°C")
+    val unit: Unit            // Display unit (e.g., Unit.RPM, Unit.C)
 ) {
     /**
      * Parse raw bytes from SSM response into an integer value.

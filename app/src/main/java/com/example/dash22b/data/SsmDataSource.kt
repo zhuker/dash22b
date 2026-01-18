@@ -3,7 +3,6 @@ package com.example.dash22b.data
 import android.content.Context
 import com.example.dash22b.obd.SsmExpressionEvaluator
 import com.example.dash22b.obd.SsmHardcodedParameters
-import com.example.dash22b.obd.SsmParameter
 import com.example.dash22b.obd.SsmSerialManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -180,7 +179,7 @@ class SsmDataSource(private val context: Context) {
                 dynamicValues[param.name] = ValueWithUnit(convertedValue, param.unit)
 
                 // Log parsed value
-                Timber.tag(TAG).d("${param.name}: raw=0x${rawValue.toString(16)}, converted=${convertedValue}${param.unit}")
+                Timber.tag(TAG).d("${param.name}: raw=0x${rawValue.toString(16)}, converted=${convertedValue}${param.unit.displayName()}")
 
             } catch (e: Exception) {
                 Timber.tag(TAG).e(e, "Error parsing ${param.name}")
@@ -189,35 +188,37 @@ class SsmDataSource(private val context: Context) {
 
         // Map to EngineData fields
         // Helper to get value or default
-        fun getV(key: String, defaultUnit: String = ""): ValueWithUnit {
+        fun getV(key: String, defaultUnit: Unit = Unit.UNKNOWN): ValueWithUnit {
             return dynamicValues[key] ?: ValueWithUnit(0f, defaultUnit)
         }
 
         // Unit conversions
-        val rpm = getV("Engine Speed", "rpm")
+        val rpm = getV("Engine Speed", Unit.RPM)
 
         // Coolant: Convert °C to °F
-        val coolantC = getV("Coolant Temp", "°C")
-        val coolant = ValueWithUnit(coolantC.value * 9f / 5f + 32f, "°F")
+        val coolantC = getV("Coolant Temp", Unit.C)
+        val coolant = coolantC.to(Unit.F)
 
         // Boost: Convert kPa to bar (gauge pressure)
         // SSM reports absolute pressure, subtract atmospheric (101.3 kPa) for gauge pressure
-        val boostKpa = getV("Boost", "kPa")
-        val boost = ValueWithUnit((boostKpa.value - 101.3f) * 0.01f, "bar")
+        val boostKpa = getV("Boost", Unit.KPA)
+        val boost = ValueWithUnit(UnitConverter.convert(boostKpa.value - 101.3f, Unit.KPA, Unit.BAR),
+            Unit.BAR
+        )
 
         // Intake Air Temp: Convert °C to °F
-        val iatC = getV("Intake Air Temp", "°C")
-        val iat = ValueWithUnit(iatC.value * 9f / 5f + 32f, "°F")
+        val iatC = getV("Intake Air Temp", Unit.C)
+        val iat = iatC.to(Unit.F)
 
         // Mass Airflow: Already in g/s
-        val maf = getV("Mass Airflow", "g/s")
+        val maf = getV("Mass Airflow", Unit.GRAMS_PER_SEC)
 
-        val battery = getV("Battery Voltage", "V")
-        val throttle = getV("Throttle", "%")
-        val spark = getV("Ignition Timing", "deg")
-        val knockCorrection = getV("Knock Correction", "deg")
-        val map = getV("MAP", "kPa")
-        val speed = getV("Vehicle Speed", "km/h")
+        val battery = getV("Battery Voltage", Unit.VOLTS)
+        val throttle = getV("Throttle", Unit.PERCENT)
+        val spark = getV("Ignition Timing", Unit.DEGREES)
+        val knockCorrection = getV("Knock Correction", Unit.DEGREES)
+        val map = getV("MAP", Unit.KPA)
+        val speed = getV("Vehicle Speed", Unit.KMH)
 
         // Log final converted values
         Timber.tag(TAG).d("--- Final Values ---")

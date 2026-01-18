@@ -6,7 +6,7 @@ import org.junit.Assert.assertEquals
 class UnitConverterTest {
     @Test
     fun testAFR() {
-        assertEquals(1.0f, UnitConverter.convert(14.7f, "lambda", "afr"))
-        assertEquals(14.7f, UnitConverter.convert(1.0f, "afr", "lambda"))
+        assertEquals(1.0f, UnitConverter.convert(14.7f, Unit.LAMBDA, Unit.AFR))
+        assertEquals(14.7f, UnitConverter.convert(1.0f, Unit.AFR, Unit.LAMBDA))
     }
 }
