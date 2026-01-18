@@ -6,7 +6,7 @@ import android.bluetooth.BluetoothManager
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.content.Context
-import android.util.Log
+import timber.log.Timber
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -23,14 +23,14 @@ class TpmsDataSource(private val context: Context) {
     @SuppressLint("MissingPermission")
     fun getTpmsUpdates(): Flow<TpmsUpdate> = callbackFlow {
         if (adapter == null || !adapter.isEnabled) {
-            Log.e("TpmsDataSource", "Bluetooth not supported or disabled")
+            Timber.e("Bluetooth not supported or disabled")
             close()
             return@callbackFlow
         }
 
         val scanner = adapter.bluetoothLeScanner
         if (scanner == null) {
-            Log.e("TpmsDataSource", "BLE Scanner not available")
+            Timber.e("BLE Scanner not available")
             close()
             return@callbackFlow
         }
@@ -55,7 +55,7 @@ class TpmsDataSource(private val context: Context) {
                                     deviceName.contains("TPMS4") -> "RR"
                                     else -> "FL"
                                 }
-                                Log.d("TpmsDataSource", "Parsed $deviceName($pos): $p bar, $t C, RSSI: ${scanResult.rssi}")
+                                Timber.d("Parsed $deviceName($pos): $p bar, $t C, RSSI: ${scanResult.rssi}")
 
                                 val newState = TpmsState(
                                     pressure = ValueWithUnit(p, "bar"),
@@ -82,7 +82,7 @@ class TpmsDataSource(private val context: Context) {
             }
 
             override fun onScanFailed(errorCode: Int) {
-                Log.e("TpmsDataSource", "onScanFailed Scan failed: $errorCode")
+                Timber.e("onScanFailed Scan failed: $errorCode")
             }
         }
 
@@ -99,7 +99,7 @@ class TpmsDataSource(private val context: Context) {
                 
             scanner.startScan(listOf(filter), settings, callback)
         } catch (e: Exception) {
-            Log.e("TpmsDataSource", "Error starting scan", e)
+            Timber.e(e, "Error starting scan")
         }
 
         awaitClose {

@@ -16,7 +16,7 @@ import com.example.dash22b.R
 import com.example.dash22b.data.TpmsDataSource
 import com.example.dash22b.data.TpmsRepository
 import com.example.dash22b.data.TpmsState
-import android.util.Log
+import timber.log.Timber
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -65,7 +65,7 @@ class TpmsService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_EXIT) {
-            Log.d("TpmsService", "Exit action received. Shutting down...")
+            Timber.d("Exit action received. Shutting down...")
             // Notify UI to close - Explicit Broadcast
             val broadcastIntent = Intent(ACTION_FORCE_EXIT)
             broadcastIntent.setPackage(packageName)
@@ -86,7 +86,7 @@ class TpmsService : Service() {
     private fun startScanning() {
         serviceScope.launch {
             while (isActive) {
-                Log.d("TpmsService", "Starting periodic BLE scan")
+                Timber.d("Starting periodic BLE scan")
                 val scanJob = launch {
                     tpmsDataSource.getTpmsUpdates()
                         .collect { update ->
@@ -102,7 +102,7 @@ class TpmsService : Service() {
                 // and other manufacturer-specific aggressive battery optimizations for background BLE
                 delay(RESCAN_DELAY_MS) 
                 scanJob.cancel()
-                Log.d("TpmsService", "Stopping periodic BLE scan (timeout reached)")
+                Timber.d("Stopping periodic BLE scan (timeout reached)")
             }
         }
     }
@@ -119,7 +119,7 @@ class TpmsService : Service() {
                         // If it has ever received data (timestamp > 0) AND it is now old
                         if (state.timestamp > 0 && (now - state.timestamp > STALE_TIMEOUT_MS)) {
                             if (!state.isStale) {
-                                Log.d("TpmsService", "Marking $key as stale")
+                                Timber.d("Marking $key as stale")
                                 currentTpmsMap[key] = state.copy(isStale = true)
                                 changed = true
                             }

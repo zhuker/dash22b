@@ -19,7 +19,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.util.Log
+import timber.log.Timber
 import kotlin.system.exitProcess
 
 class MainActivity : ComponentActivity() {
@@ -27,7 +27,7 @@ class MainActivity : ComponentActivity() {
     private val exitReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == com.example.dash22b.service.TpmsService.ACTION_FORCE_EXIT) {
-                Log.d("MainActivity", "Received ACTION_FORCE_EXIT intent")
+                Timber.d("Received ACTION_FORCE_EXIT intent")
                 finishAndRemoveTask()
                 exitProcess(0)
             }
