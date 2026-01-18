@@ -2,6 +2,7 @@ package com.example.dash22b
 
 import android.app.Application
 import android.util.Log
+import com.example.dash22b.obd.SsmSerialManager
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.io.File
@@ -24,6 +25,29 @@ class DashApplication : Application() {
         
         // Always plant FileLoggingTree (or you can condition it on DEBUG/RELEASE)
         Timber.plant(FileLoggingTree())
+        
+        // Attempt SSM ECU init on startup
+        tryEcuInit()
+    }
+    
+    private fun tryEcuInit() {
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO)
+        scope.launch {
+            Timber.i("Attempting SSM ECU init via USB serial...")
+            val ssm = SsmSerialManager(this@DashApplication)
+            
+            if (ssm.connect()) {
+                val response = ssm.sendInit(target = 1) // ECU
+                if (response != null) {
+                    Timber.i("ECU responded! ROM ID: ${response.getRomId()}")
+                } else {
+                    Timber.w("No valid response from ECU")
+                }
+                ssm.disconnect()
+            } else {
+                Timber.w("Could not connect to USB serial device (not plugged in or no permission)")
+            }
+        }
     }
 
     private fun rotateLogs() {

@@ -68,4 +68,5 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
     implementation(libs.jakewharton.timber)
+    implementation("com.github.mik3y:usb-serial-for-android:3.7.2")
 }
