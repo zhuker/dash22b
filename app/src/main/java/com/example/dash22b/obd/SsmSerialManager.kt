@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit
 class SsmSerialManager(private val context: Context) {
     
     companion object {
-        private const val TAG = "SsmSerialManager"
+        const val TAG = "SsmSerialManager"
         private const val BAUD_RATE = 4800
         private const val DATA_BITS = 8
         private const val STOP_BITS = UsbSerialPort.STOPBITS_1

@@ -27,7 +27,7 @@ class SsmDataSource(private val context: Context,
 ) {
 
     companion object {
-        private const val TAG = "SsmDataSource"
+        const val TAG = "SsmDataSource"
         private const val POLL_DELAY_MS = 50L  // Target ~20Hz
         private const val MAX_RETRY_DELAY_MS = 10_000L
         private const val HISTORY_SIZE = 50

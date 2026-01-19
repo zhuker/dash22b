@@ -2,6 +2,7 @@ package com.example.dash22b
 
 import android.app.Application
 import android.util.Log
+import com.example.dash22b.data.SsmDataSource
 import com.example.dash22b.di.AppContainer
 import com.example.dash22b.obd.SsmSerialManager
 import com.example.dash22b.obd.SsmEcuInit
@@ -18,6 +19,21 @@ class DashApplication : Application() {
     lateinit var appContainer: AppContainer
         private set
 
+    companion object {
+        private val TAG_LOG_LEVELS = mapOf(
+            SsmDataSource.TAG to Log.WARN, // Only log WARN and ERROR for this noisy tag
+            SsmSerialManager.TAG to Log.INFO
+        )
+
+        /**
+         * Shared logic to determine if a tag/priority combo should be logged.
+         */
+        fun shouldLog(tag: String?, priority: Int): Boolean {
+            val minPriority = TAG_LOG_LEVELS[tag] ?: Log.VERBOSE
+            return priority >= minPriority
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
 
@@ -28,7 +44,7 @@ class DashApplication : Application() {
         rotateLogs()
 
         if (BuildConfig.DEBUG) {
-            Timber.plant(Timber.DebugTree())
+            Timber.plant(FilteredDebugTree())
         }
         
         // Always plant FileLoggingTree (or you can condition it on DEBUG/RELEASE)
@@ -85,6 +101,12 @@ class DashApplication : Application() {
         }
     }
 
+    private class FilteredDebugTree : Timber.DebugTree() {
+        override fun isLoggable(tag: String?, priority: Int): Boolean {
+            return shouldLog(tag, priority)
+        }
+    }
+
     private inner class FileLoggingTree : Timber.Tree() {
         
         private val logChannel = kotlinx.coroutines.channels.Channel<String>(capacity = 1000)
@@ -110,6 +132,10 @@ class DashApplication : Application() {
                     }
                 }
             }
+        }
+
+        override fun isLoggable(tag: String?, priority: Int): Boolean {
+            return true
         }
 
         override fun log(priority: Int, tag: String?, message: String, t: Throwable?) {
