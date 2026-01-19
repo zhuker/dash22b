@@ -21,6 +21,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import androidx.compose.runtime.CompositionLocalProvider
 import com.example.dash22b.di.LocalParameterRegistry
+import com.example.dash22b.di.LocalPresetManager
 import com.example.dash22b.di.LocalTpmsRepository
 import timber.log.Timber
 import kotlin.system.exitProcess
@@ -88,7 +89,8 @@ class MainActivity : ComponentActivity() {
 
             CompositionLocalProvider(
                 LocalParameterRegistry provides container.parameterRegistry,
-                LocalTpmsRepository provides container.tpmsRepository
+                LocalTpmsRepository provides container.tpmsRepository,
+                LocalPresetManager provides container.presetManager
             ) {
                 Dash22bTheme {
                     // A surface container using the 'background' color from the theme

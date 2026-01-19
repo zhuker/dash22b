@@ -4,6 +4,8 @@ import android.content.Context
 import com.example.dash22b.data.AndroidAssetLoader
 import com.example.dash22b.data.AssetLoader
 import com.example.dash22b.data.ParameterRegistry
+import com.example.dash22b.data.PresetManager
+import com.example.dash22b.data.PresetRepository
 import com.example.dash22b.data.TpmsRepository
 import com.example.dash22b.obd.SsmEcuInit
 
@@ -35,5 +37,13 @@ class AppContainer(context: Context) {
 
     val tpmsRepository: TpmsRepository by lazy {
         TpmsRepository()
+    }
+
+    val presetRepository: PresetRepository by lazy {
+        PresetRepository(context)
+    }
+
+    val presetManager: PresetManager by lazy {
+        PresetManager(presetRepository)
     }
 }

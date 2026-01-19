@@ -53,20 +53,22 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.LaunchedEffect
+import com.example.dash22b.data.GaugeConfig
+import com.example.dash22b.data.PresetState
 import com.example.dash22b.data.SsmDataSource
 import com.example.dash22b.di.LocalParameterRegistry
+import com.example.dash22b.di.LocalPresetManager
 import com.example.dash22b.di.LocalTpmsRepository
 import com.example.dash22b.service.TpmsService
+import com.example.dash22b.ui.components.PresetBottomSheet
+import com.example.dash22b.ui.components.PresetLabel
+import com.example.dash22b.data.PresetManager.Companion.GAUGE_DISABLED_PARAM
 import timber.log.Timber
 
 enum class ScreenMode {
     GAUGES, GRAPHS, OTHER
 }
-
-data class GaugeConfig(
-    val id: Int,
-    val parameterName: String
-)
 
 @Composable
 fun ParameterSelectionDialog(
@@ -75,7 +77,7 @@ fun ParameterSelectionDialog(
 ) {
     val parameterRegistry = LocalParameterRegistry.current
     val options = remember(parameterRegistry) { parameterRegistry.getAllDefinitions() }
-    
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Select Parameter") },
@@ -85,6 +87,18 @@ fun ParameterSelectionDialog(
                     .fillMaxWidth()
                     .height(300.dp)
             ) {
+                // "None" option at the top to disable the gauge
+                item {
+                    Text(
+                        text = "None (disable gauge)",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onParameterSelected(GAUGE_DISABLED_PARAM) }
+                            .padding(16.dp),
+                        color = Color.Gray
+                    )
+                    androidx.compose.material3.Divider(color = Color.DarkGray)
+                }
                 items(options) { param ->
                     Text(
                         text = "${param.name} (${param.unit.displayName()})",
@@ -115,51 +129,66 @@ fun DashboardScreen() {
     // Use Repository for TPMS data (populated by Background Service)
     val tpmsRepository = LocalTpmsRepository.current
     val tpmsData by tpmsRepository.tpmsState.collectAsState()
-    
+
+    // Preset Manager for gauge configurations
+    val presetManager = LocalPresetManager.current
+    val presetState by presetManager.presetState.collectAsState()
+    val allPresets by presetManager.allPresets.collectAsState()
+    val gaugeConfigs by presetManager.currentConfigs.collectAsState()
+    val subscribedParams by presetManager.subscribedParameters.collectAsState()
+
+    // Subscribe to parameters when they change
+    LaunchedEffect(subscribedParams) {
+        dataSource.subscribeToParameters(subscribedParams)
+    }
+
     val dataFlow = remember(dataSource) { dataSource.getEngineData() }
     val engineDataRaw by dataFlow.collectAsState(initial = EngineData())
 
     val engineData = remember(engineDataRaw, tpmsData) {
         engineDataRaw.copy(tpms = tpmsData)
     }
-    
+
     // State for Navigation
     var currentMode by remember { mutableStateOf(ScreenMode.GAUGES) }
 
-    // State for Dynamic Gauges (ID -> Config)
-    // IDs: 
-    // 0, 1: Big Gauges (Top in Portrait, Left in Landscape)
-    // 2..10: Small Grid Gauges
-    val initialConfigs = remember {
-        listOf(
-            GaugeConfig(0, "RPM"),
-            GaugeConfig(1, "Vehicle Speed"),
-            GaugeConfig(2, "Boost"), // or "Manifold Relative Pressure" depending on registry
-            GaugeConfig(3, "Battery Voltage"),
-            GaugeConfig(4, "Inj Pulse Width"), 
-            GaugeConfig(5, "Coolant Temp"),
-            GaugeConfig(6, "Ignition Timing"), 
-            GaugeConfig(7, "Inj Duty Cycle"), 
-            GaugeConfig(8, "Intake Temp"), 
-            GaugeConfig(9, "Comm Fuel Final"), // "AFR" usually mapped to Comm Fuel Final or AF Sens 1 Ratio
-            GaugeConfig(10, "Mass Airflow")
-        )
-    }
-    
-    var gaugeConfigs by remember { mutableStateOf(initialConfigs) }
+    // State for parameter selection dialog
     var showDialogForId by remember { mutableStateOf<Int?>(null) }
+
+    // State for preset bottom sheet
+    var showPresetSheet by remember { mutableStateOf(false) }
 
     if (showDialogForId != null) {
         ParameterSelectionDialog(
             onDismiss = { showDialogForId = null },
             onParameterSelected = { newParam ->
-                gaugeConfigs = gaugeConfigs.map { 
-                    if (it.id == showDialogForId) it.copy(parameterName = newParam) else it 
-                }
+                presetManager.updateGaugeConfig(showDialogForId!!, newParam)
                 showDialogForId = null
             }
         )
     }
+
+    // Preset bottom sheet
+    PresetBottomSheet(
+        isVisible = showPresetSheet,
+        presets = allPresets,
+        currentState = presetState,
+        onDismiss = { showPresetSheet = false },
+        onPresetSelected = { preset ->
+            presetManager.loadPreset(preset.id)
+            showPresetSheet = false
+        },
+        onSaveAsNew = { name ->
+            presetManager.saveCurrentAsPreset(name)
+            showPresetSheet = false
+        },
+        onRename = { id, newName ->
+            presetManager.renamePreset(id, newName)
+        },
+        onDelete = { id ->
+            presetManager.deletePreset(id)
+        }
+    )
 
     androidx.compose.foundation.layout.BoxWithConstraints(
         modifier = Modifier
@@ -182,13 +211,15 @@ fun DashboardScreen() {
                         ScreenMode.GAUGES -> PortraitGaugesContent(
                             engineData = engineData,
                             gaugeConfigs = gaugeConfigs,
-                            onGaugeLongClick = { id -> showDialogForId = id }
+                            presetState = presetState,
+                            onGaugeLongClick = { id -> showDialogForId = id },
+                            onPresetClick = { showPresetSheet = true }
                         )
-                        ScreenMode.GRAPHS -> GraphsContent(engineData) // Graphs reuse for now
+                        ScreenMode.GRAPHS -> GraphsContent(engineData)
                         ScreenMode.OTHER -> OtherContent(engineData)
                     }
                 }
-                
+
                 // Bottom Status Bar (Now stacked below content in Portrait)
                 BottomStatusBar(
                     engineData = engineData,
@@ -222,12 +253,14 @@ fun DashboardScreen() {
                         ScreenMode.GAUGES -> GaugesContent(
                             engineData = engineData,
                             gaugeConfigs = gaugeConfigs,
-                            onGaugeLongClick = { id -> showDialogForId = id }
+                            presetState = presetState,
+                            onGaugeLongClick = { id -> showDialogForId = id },
+                            onPresetClick = { showPresetSheet = true }
                         )
                         ScreenMode.GRAPHS -> GraphsContent(engineData)
                         ScreenMode.OTHER -> OtherContent(engineData)
                     }
-                    
+
                     // Bottom Status Bar
                     BottomStatusBar(
                         engineData = engineData,
@@ -439,6 +472,20 @@ fun DynamicCircularGauge(
     isBig: Boolean = false,
     onLongClick: () -> kotlin.Unit
 ) {
+    // Handle disabled gauge
+    if (config.parameterName == GAUGE_DISABLED_PARAM) {
+        CircularGauge(
+            value = com.example.dash22b.data.ValueWithUnit(0f, Unit.UNKNOWN),
+            minValue = 0f,
+            maxValue = 100f,
+            label = "—",
+            color = Color.DarkGray,
+            modifier = modifier,
+            onLongClick = onLongClick
+        )
+        return
+    }
+
     val parameterRegistry = LocalParameterRegistry.current
 
     // Look up definition
@@ -466,17 +513,17 @@ fun DynamicCircularGauge(
     }
 
     val displayValue = vwu.to(targetUnit)
-    
+
     // Fallbacks if not found
     val label = def?.name ?: key
-    
+
     // Heuristic Min/Max
-    val min = 0f 
-    val max = if (def?.maxExpected?.contains("100") == true) 100f 
+    val min = 0f
+    val max = if (def?.maxExpected?.contains("100") == true) 100f
               else if (def?.name?.contains("RPM") == true) 8000f
               else if (def?.name?.contains("Boost") == true) 2.5f // bar
               else if (def?.name?.contains("Voltage") == true) 16f
-              else 100f 
+              else 100f
 
     val color = if (isBig) {
          if (config.id == 0) GaugeGreen else GaugeRed
@@ -503,7 +550,9 @@ fun DynamicCircularGauge(
 fun PortraitGaugesContent(
     engineData: EngineData,
     gaugeConfigs: List<GaugeConfig>,
-    onGaugeLongClick: (Int) -> kotlin.Unit
+    presetState: PresetState,
+    onGaugeLongClick: (Int) -> kotlin.Unit,
+    onPresetClick: () -> kotlin.Unit
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         // Top Row: Big Gauges (IDs 0, 1)
@@ -511,10 +560,11 @@ fun PortraitGaugesContent(
             modifier = Modifier
                 .weight(0.4f)
                 .fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
         ) {
             DynamicCircularGauge(
-                config = gaugeConfigs.find { it.id == 0 } ?: GaugeConfig(0, "RPM"),
+                config = gaugeConfigs.find { it.id == 0 } ?: GaugeConfig(0, "Engine Speed"),
                 data = engineData,
                 modifier = Modifier.weight(1f).padding(8.dp),
                 isBig = true,
@@ -528,7 +578,18 @@ fun PortraitGaugesContent(
                 onLongClick = { onGaugeLongClick(1) }
             )
         }
-        
+
+        // Preset label between big gauges and small gauges
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.Center
+        ) {
+            PresetLabel(
+                presetState = presetState,
+                onClick = onPresetClick
+            )
+        }
+
         // Bottom Grid: Smaller gauges (IDs 2..10)
         Column(
             modifier = Modifier.weight(0.6f),
@@ -538,7 +599,7 @@ fun PortraitGaugesContent(
             gridIds.forEach { rowIds ->
                 Row(modifier = Modifier.weight(1f)) {
                     rowIds.forEach { id ->
-                         DynamicCircularGauge(
+                        DynamicCircularGauge(
                             config = gaugeConfigs.find { it.id == id } ?: GaugeConfig(id, "Unknown"),
                             data = engineData,
                             modifier = Modifier.weight(1f),
@@ -555,7 +616,9 @@ fun PortraitGaugesContent(
 fun GaugesContent(
     engineData: EngineData,
     gaugeConfigs: List<GaugeConfig>,
-    onGaugeLongClick: (Int) -> kotlin.Unit
+    presetState: PresetState,
+    onGaugeLongClick: (Int) -> kotlin.Unit,
+    onPresetClick: () -> kotlin.Unit
 ) {
     Row(modifier = Modifier.fillMaxSize()) {
         // Left Column (Large Gauges IDs 0, 1)
@@ -567,12 +630,19 @@ fun GaugesContent(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             DynamicCircularGauge(
-                config = gaugeConfigs.find { it.id == 0 } ?: GaugeConfig(0, "RPM"),
+                config = gaugeConfigs.find { it.id == 0 } ?: GaugeConfig(0, "Engine Speed"),
                 data = engineData,
                 modifier = Modifier.weight(1f).padding(16.dp),
                 isBig = true,
                 onLongClick = { onGaugeLongClick(0) }
             )
+
+            // Preset label between large gauges
+            PresetLabel(
+                presetState = presetState,
+                onClick = onPresetClick
+            )
+
             DynamicCircularGauge(
                 config = gaugeConfigs.find { it.id == 1 } ?: GaugeConfig(1, "Vehicle Speed"),
                 data = engineData,
@@ -581,19 +651,19 @@ fun GaugesContent(
                 onLongClick = { onGaugeLongClick(1) }
             )
         }
-        
+
         // Right Grid (Smaller Gauges IDs 2..10)
         Column(
             modifier = Modifier
                 .weight(0.6f)
                 .fillMaxHeight(),
-             verticalArrangement = Arrangement.SpaceEvenly
+            verticalArrangement = Arrangement.SpaceEvenly
         ) {
             val gridIds = (2..10).toList().chunked(3)
             gridIds.forEach { rowIds ->
                 Row(modifier = Modifier.weight(1f)) {
                     rowIds.forEach { id ->
-                         DynamicCircularGauge(
+                        DynamicCircularGauge(
                             config = gaugeConfigs.find { it.id == id } ?: GaugeConfig(id, "Unknown"),
                             data = engineData,
                             modifier = Modifier.weight(1f),

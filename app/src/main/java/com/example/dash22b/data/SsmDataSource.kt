@@ -4,10 +4,12 @@ import android.content.Context
 import com.example.dash22b.obd.SsmEcuInit
 import com.example.dash22b.obd.SsmExpressionEvaluator
 import com.example.dash22b.obd.SsmHardcodedParameters
+import com.example.dash22b.obd.SsmParameter
 import com.example.dash22b.obd.SsmSerialManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.Dispatchers
@@ -17,6 +19,9 @@ import kotlin.math.min
 /**
  * SSM real-time data source that provides live ECU data via USB serial.
  * Follows the same architecture pattern as LogFileDataSource.
+ *
+ * Supports parameter subscription to only poll currently displayed parameters,
+ * which is critical for maintaining good refresh rates on the 4800 baud connection.
  */
 class SsmDataSource(private val context: Context) {
 
@@ -28,7 +33,34 @@ class SsmDataSource(private val context: Context) {
     }
 
     private val serialManager = SsmSerialManager(context)
-    private val parameters = SsmHardcodedParameters.parameters
+    private val allParameters = SsmHardcodedParameters.parameters
+
+    // Parameter subscription - only poll these parameters
+    private val _subscribedParams = MutableStateFlow<Set<String>>(emptySet())
+
+    /**
+     * Subscribe to specific parameters by name.
+     * Only subscribed parameters will be polled from the ECU.
+     */
+    fun subscribeToParameters(parameterNames: Set<String>) {
+        _subscribedParams.value = parameterNames
+        Timber.tag(TAG).d("Subscribed to ${parameterNames.size} parameters: $parameterNames")
+    }
+
+    /**
+     * Get the SsmParameters to poll based on current subscription.
+     * Returns all parameters if no subscription is set.
+     */
+    private fun getParametersToRead(): List<SsmParameter> {
+        val subscribed = _subscribedParams.value
+        return if (subscribed.isEmpty()) {
+            // No subscription set - poll all parameters (default behavior)
+            allParameters
+        } else {
+            // Filter to only subscribed parameters
+            allParameters.filter { param -> subscribed.contains(param.name) }
+        }
+    }
 
     /**
      * Returns a Flow that continuously polls the ECU for real-time data.
@@ -64,9 +96,18 @@ class SsmDataSource(private val context: Context) {
 
             while (true) {
                 try {
-                    val response = serialManager.readParameters(parameters)
+                    // Get parameters to read based on current subscription
+                    val parametersToRead = getParametersToRead()
+
+                    if (parametersToRead.isEmpty()) {
+                        // No parameters subscribed - wait and check again
+                        delay(POLL_DELAY_MS)
+                        continue
+                    }
+
+                    val response = serialManager.readParameters(parametersToRead)
                     if (response != null) {
-                        val engineData = parseResponse(response, history)
+                        val engineData = parseResponse(response, parametersToRead, history)
                         history = engineData
                         emit(engineData)
                         consecutiveErrors = 0  // Reset error counter on success
@@ -139,9 +180,14 @@ class SsmDataSource(private val context: Context) {
     /**
      * Parses SSM response packet into EngineData.
      * Applies conversion expressions and maps to typed fields.
+     *
+     * @param packet The SSM response packet
+     * @param parametersRead The parameters that were requested (in order)
+     * @param previousData Previous EngineData for history tracking
      */
     private fun parseResponse(
         packet: com.example.dash22b.obd.SsmPacket,
+        parametersRead: List<SsmParameter>,
         previousData: EngineData
     ): EngineData {
         val data = packet.data
@@ -153,11 +199,12 @@ class SsmDataSource(private val context: Context) {
             return previousData
         }
 
-        val dynamicValues = mutableMapOf<String, ValueWithUnit>()
+        // Start with previous values to preserve unsubscribed parameters
+        val dynamicValues = previousData.values.toMutableMap()
         var offset = 1  // Skip 0xE8 marker
 
-        // Parse each parameter value
-        parameters.forEach { param ->
+        // Parse each parameter value (only the ones we requested)
+        parametersRead.forEach { param ->
             try {
                 if (offset + param.length > data.size) {
                     Timber.tag(TAG).w("Not enough data for ${param.name} at offset $offset")
@@ -173,9 +220,6 @@ class SsmDataSource(private val context: Context) {
 
                 // Store with original SSM unit
                 dynamicValues[param.name] = ValueWithUnit(convertedValue, param.unit)
-
-                // Log parsed value
-                Timber.tag(TAG).d("${param.name}: raw=0x${rawValue.toString(16)}, converted=${convertedValue}${param.unit.displayName()}")
 
             } catch (e: Exception) {
                 Timber.tag(TAG).e(e, "Error parsing ${param.name}")
@@ -216,19 +260,13 @@ class SsmDataSource(private val context: Context) {
         val map = getV("MAP", Unit.KPA)
         val speed = getV("Vehicle Speed", Unit.KMH)
 
-        // Log final converted values
-        Timber.tag(TAG).d("--- Final Values ---")
-        Timber.tag(TAG).d("Engine Speed: ${rpm.value} ${rpm.unit}")
-        Timber.tag(TAG).d("Coolant Temp: ${coolant.value} ${coolant.unit} (from ${coolantC.value}°C)")
-        Timber.tag(TAG).d("Boost: ${boost.value} ${boost.unit} (from ${boostKpa.value} kPa)")
-        Timber.tag(TAG).d("Throttle: ${throttle.value} ${throttle.unit}")
-        Timber.tag(TAG).d("Ignition Timing: ${spark.value} ${spark.unit}")
-        Timber.tag(TAG).d("Knock Correction: ${knockCorrection.value} ${knockCorrection.unit}")
-        Timber.tag(TAG).d("Intake Air Temp: ${iat.value} ${iat.unit} (from ${iatC.value}°C)")
-        Timber.tag(TAG).d("Battery Voltage: ${battery.value} ${battery.unit}")
-        Timber.tag(TAG).d("MAP: ${map.value} ${map.unit}")
-        Timber.tag(TAG).d("Vehicle Speed: ${speed.value} ${speed.unit}")
-        Timber.tag(TAG).d("Mass Airflow: ${maf.value} ${maf.unit}")
+        // Log final converted values only for parameters that were read
+        val valuesLog = parametersRead.mapNotNull { param ->
+            dynamicValues[param.name]?.let { vwu ->
+                "${param.name}: ${vwu.value} ${vwu.unit.displayName()}"
+            }
+        }.joinToString(" | ")
+        Timber.tag(TAG).d("Values (${parametersRead.size}): $valuesLog")
 
         // Build EngineData with current timestamp
         val currentTimestamp = System.currentTimeMillis()
