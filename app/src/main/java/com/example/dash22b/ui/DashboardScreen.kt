@@ -470,12 +470,8 @@ fun DynamicCircularGauge(
     val label = def?.name ?: key
 
     // Heuristic Min/Max
-    val min = 0f
-    val max = if (def?.maxExpected?.contains("100") == true) 100f
-              else if (def?.name?.contains("RPM") == true) 8000f
-              else if (def?.name?.contains("Boost") == true) 2.5f // bar
-              else if (def?.name?.contains("Voltage") == true) 16f
-              else 100f
+    val min = def?.maxExpected ?: 0f
+    val max = def?.maxExpected ?: 100f
 
     val color = if (isBig) {
          if (config.id == 0) GaugeGreen else GaugeRed

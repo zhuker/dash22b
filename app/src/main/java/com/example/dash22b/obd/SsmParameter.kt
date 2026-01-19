@@ -14,7 +14,7 @@ class SsmParameter(
     val length: Int,          // Number of bytes to read (1, 2, or 4)
     val expression: String,   // Conversion expression (e.g., "x/4", "x-40")
     unit: DisplayUnit            // Display unit (e.g., Unit.RPM, Unit.C)
-) : ParameterDefinition(id, "float", unit, name, id, "0", "100", name) {
+) : ParameterDefinition(id, "float", unit, name, id, 0f, 100f, name) {
     /**
      * Parse raw bytes from SSM response into an integer value.
      * Handles 1-byte, 2-byte, and 4-byte big-endian values.

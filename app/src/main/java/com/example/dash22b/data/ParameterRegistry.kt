@@ -10,28 +10,10 @@ abstract class ParameterDefinition(
     val unit: DisplayUnit,
     val name: String, // Accessport Monitor Name (e.g., "RPM")
     val description: String,
-    val minExpected: String,
-    val maxExpected: String,
+    val minExpected: Float,
+    val maxExpected: Float,
     val accessportName: String // The name used in log files
-) {
-    // Helper to get float ranges from specific CSV format "0 - 100 %"
-    fun getMinMax(): Pair<Float, Float> {
-        // Very basic heuristic parser for the "Expected" fields which are messy strings
-        // Example: "0.15 - 0.40 g/rev" -> 0.15, 0.40
-        // Example: "2000 - 3500 rpm" -> 2000, 3500
-        // Example: "0 %" -> 0, 100 (if max missing?)
-
-        fun parseVal(s: String): Float? {
-            val numStr = s.split(" ").firstOrNull { it.matches(Regex("-?\\d+(\\.\\d+)?")) }
-            return numStr?.toFloatOrNull()
-        }
-
-        // We generally use the "WOT Expected" or "Cruise Expected" for Gauge Ranges?
-        // Actually, let's just default to 0-100 for percentage, or try to parse.
-        // For now, hardcode overrides for common types or just return 0-100 if fails.
-        return 0f to 100f
-    }
-}
+)
 
 class ParameterDefinitionImpl(
     id: String,
@@ -39,8 +21,8 @@ class ParameterDefinitionImpl(
     unit: DisplayUnit,
     name: String, // Accessport Monitor Name (e.g., "RPM")
     description: String,
-    minExpected: String,
-    maxExpected: String,
+    minExpected: Float,
+    maxExpected: Float,
     accessportName: String // The name used in log files
 ) : ParameterDefinition(
     id,
@@ -101,8 +83,8 @@ class ParameterRegistry private constructor(
                             unit = DisplayUnit.fromString(tokens[2].trim()),
                             name = tokens[3].replace("\"", "").trim(), // Original Name
                             description = tokens[4].replace("\"", "").trim(),
-                            minExpected = tokens[5].trim(),
-                            maxExpected = tokens[7].trim(), // Using WOT expected as Max often?
+                            minExpected = tokens[5].trim().toFloatOrNull() ?: 0f,
+                            maxExpected = tokens[7].trim().toFloatOrNull() ?: 100f, // Using WOT expected as Max often?
                             accessportName = tokens[8].trim() // Accessport Monitor Name
                         )
 
