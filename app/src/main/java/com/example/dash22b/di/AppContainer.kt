@@ -30,9 +30,10 @@ class AppContainer(context: Context) {
     //     parameterRegistry = ParameterRegistry.fromXml(xmlStream, ecuInit)
     // }
     val parameterRegistry: ParameterRegistry by lazy {
-        // TODO: Replace with XML parsing when ECU is connected
-        // For now, use hardcoded parameters for offline development
-        ParameterRegistry.fromHardcodedSsm()
+        // Load parameters from RomRaider XML logger definition
+        // Using hardcoded EcuInit for now to support capability filtering
+        val ecuInit = SsmEcuInit.createHardcoded()
+        assetLoader.open("logger_METRIC_EN_v370.xml").use { ParameterRegistry.fromXml(it, ecuInit) }
     }
 
     val tpmsRepository: TpmsRepository by lazy {

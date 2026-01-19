@@ -28,11 +28,25 @@ class SsmLoggerDefinitionParser(private val ecuInit: SsmEcuInit?) {
     fun parse(inputStream: InputStream, target: Int = 1): List<SsmParameter> {
         val parameters = mutableListOf<SsmParameter>()
 
+        // Read XML content as string and remove DOCTYPE to avoid Android parser issues
+        val fullContent = inputStream.bufferedReader().readText()
+        val sanitizedContent = if (fullContent.contains("<!DOCTYPE")) {
+            val startIdx = fullContent.indexOf("<!DOCTYPE")
+            val endIdx = fullContent.indexOf("]>", startIdx)
+            if (endIdx != -1) {
+                // Remove the DOCTYPE section entirely
+                fullContent.substring(0, startIdx) + fullContent.substring(endIdx + 2)
+            } else {
+                fullContent
+            }
+        } else {
+            fullContent
+        }
+
         val factory = DocumentBuilderFactory.newInstance()
-        // Disable DTD validation to speed up parsing
-        factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
+        factory.isValidating = false
         val builder = factory.newDocumentBuilder()
-        val document = builder.parse(inputStream)
+        val document = builder.parse(sanitizedContent.byteInputStream())
 
         // Initialize ROM ID once if available
         val romId = ecuInit?.getRomId()
