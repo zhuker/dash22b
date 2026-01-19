@@ -190,7 +190,7 @@ class ParameterRegistry private constructor(
     fun getMaxExpected(def: ParameterDefinition?, targetUnit: DisplayUnit): Float {
         if (def == null) return 100f
         if (!minMaxMap.containsKey(def.name)) {
-            Timber.w("oops cant find minmax for '${def.name}'")
+//            Timber.w("oops cant find minmax for '${def.name}'")
             if (def.unit == DisplayUnit.VOLTS) {
                 return 12f
             }
