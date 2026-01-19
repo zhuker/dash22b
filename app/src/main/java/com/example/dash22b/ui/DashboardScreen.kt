@@ -453,16 +453,7 @@ fun DynamicCircularGauge(
     // If configuration has a preferred unit, use it.
     // Otherwise, if definition has a preferred unit, use it.
     // Otherwise use the log unit.
-    var targetUnit = config.getDisplayUnit() ?: def?.unit ?: vwu.unit
-
-    // Heuristic overrides ONLY if no specific unit was selected in config
-    if (config.displayUnitName == null) {
-        if (key.contains("Boost") || key.contains("Pressure")) {
-            targetUnit = DisplayUnit.BAR
-        } else if (targetUnit == DisplayUnit.F || vwu.unit == DisplayUnit.F) {
-            targetUnit = DisplayUnit.C // Always prefer C for display?
-        }
-    }
+    val targetUnit = config.getDisplayUnit() ?: def?.unit ?: vwu.unit
 
     val displayValue = vwu.to(targetUnit)
 
@@ -470,8 +461,8 @@ fun DynamicCircularGauge(
     val label = def?.name ?: key
 
     // Heuristic Min/Max
-    val min = def?.maxExpected ?: 0f
-    val max = def?.maxExpected ?: 100f
+    val min = parameterRegistry.getMinExpected(def, targetUnit)
+    val max = parameterRegistry.getMaxExpected(def, targetUnit)
 
     val color = if (isBig) {
          if (config.id == 0) GaugeGreen else GaugeRed
