@@ -125,15 +125,43 @@ class ParameterRegistry private constructor(
         }
 
         /**
-         * Factory method (future): Load parameter definitions from XML file.
-         * This will support logger_METRIC_EN_v370.xml format for 300+ parameters.
+         * Factory method: Load parameter definitions from XML file (RomRaider logger format).
+         * Supports logger_METRIC_EN_v370.xml format with capability bit filtering.
+         *
+         * @param inputStream The XML file input stream
+         * @param ecuInit ECU initialization data for capability filtering (null to include all)
+         * @param target Target filter: 1=ECU, 2=TCU, 3=both (default: 1)
          */
-        fun fromXml(inputStream: java.io.InputStream): ParameterRegistry {
-            // TODO: Parse logger_METRIC_EN_v370.xml
-            // Build ParameterDefinition objects from XML parameter elements
-            // Support capability checking via ecubyteindex/ecubit attributes
+        fun fromXml(
+            inputStream: java.io.InputStream,
+            ecuInit: com.example.dash22b.obd.SsmEcuInit? = null,
+            target: Int = 1
+        ): ParameterRegistry {
+            val definitions = sortedMapOf<String, ParameterDefinition>()
 
-            return ParameterRegistry(sortedMapOf())
+            val ssmParameters = com.example.dash22b.obd.SsmLoggerDefinitionParser.parseParameters(
+                inputStream = inputStream,
+                ecuInit = ecuInit,
+                target = target
+            )
+
+            // Convert SsmParameter objects to ParameterDefinition objects
+            ssmParameters.forEach { ssmParam ->
+                val def = ParameterDefinition(
+                    id = ssmParam.id,
+                    type = "float",
+                    unit = ssmParam.unit,
+                    name = ssmParam.name,
+                    description = ssmParam.id,
+                    minExpected = "0",
+                    maxExpected = "100",
+                    accessportName = ssmParam.name
+                )
+                definitions[ssmParam.name.lowercase()] = def
+            }
+
+            Timber.d("Created ParameterRegistry with ${definitions.size} parameters from XML")
+            return ParameterRegistry(definitions)
         }
     }
 

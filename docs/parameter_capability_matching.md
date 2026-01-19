@@ -263,8 +263,8 @@ Both refer to the same physical bytes in the init response, just with different 
 [0x80] [dst] [src] [len] [0xFF] [cap0] [cap1] [cap2] ... [romid0-4] ... [checksum]
    ^      ^     ^     ^     ^      ^      ^      ^           ^
    |      |     |     |     |      |      |      |           ROM ID (5 bytes)
-   |      |     |     |     |      |      |      Capability bytes
-   |      |     |     |     |      Capability byte 0
+   |      |     |     |     |      Capability bytes
+   |      |     |     |     Capability byte 0
    |      |     |     |     Init response marker
    |      |     |     Data length
    |      |     Source (ECU = 0x10)
@@ -360,6 +360,44 @@ From `logger_METRIC_EN_v370.xml`:
 | P13 | Throttle % | 8 | 5 | Byte 8, bit 5 |
 
 Most common parameters use **byte 8** for capability checking, with different bits for each parameter.
+
+---
+
+## Findings from 2005 STi Verification (2026-01-18)
+
+### 1. ROM ID Parsing Offset
+A critical discovery was made regarding the extraction of the ROM ID from the Init packet.
+
+- **The Issue**: Early implementations (and some assumptions) expected the ROM ID to start immediately after the `0xFF` marker (byte offset 5).
+- **The Reality**: For matching against `logger_METRIC_EN_v370.xml`, the valid ROM ID starts at **byte offset 8** of the full packet (0-indexed).
+- **Packet Structure**:
+    - `[0..3]`: Header (4 bytes)
+    - `[4]`: Init Response Marker (`0xFF`)
+    - `[5..7]`: **Padding/Flags** (3 bytes) - *Must be skipped*
+    - `[8..12]`: **Effective ROM ID** (5 bytes)
+
+**Example (2005 STi)**:
+- Full Packet: `80 F0 10 39 FF A2 10 11 3D 12 59 40 06 ...`
+- Offset 5 extract: `A210113D12` (Invalid, not in XML)
+- Offset 8 extract: `3D12594006` (Valid, exists in XML)
+
+### 2. Dual Parameter Discovery Methods
+The system uses two distinct, independent methods to determine parameter support:
+
+1.  **Standard Parameters (`<parameter>`)**:
+    - Discovery: **Capability Bits** (at specific `ecubyteindex` offsets).
+    - Dependency: **None**. Does not require a valid ROM ID match.
+    - Result: PiMonitor/RomRaider can find P8 (RPM), P2 (Temp), etc., even if the ROM ID is parsed incorrectly, because they rely solely on the capability bit flags later in the packet.
+
+2.  **Extended Parameters (`<ecuparam>`)**:
+    - Discovery: **ROM ID Lookup**.
+    - Dependency: **Strict**. Requires the extracted ROM ID string to definitively exist in the comma-separated list of an `<ecu id="...">` tag.
+    - Result: These parameters (E1, E2, etc.) will be completely missing if the ROM ID parsing offset is wrong.
+
+### 3. XML Structure Nuance
+- `<ecuparam>` elements are **siblings** of `<parameter>` elements (inside a separate `<ecuparams>` container).
+- They are **not** children of `<parameter>`.
+- Parsers must traverse both `<parameters>` (standard) and `<ecuparams>` (extended) sections independently.
 
 ---
 

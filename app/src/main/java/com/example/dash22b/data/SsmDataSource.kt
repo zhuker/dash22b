@@ -1,6 +1,7 @@
 package com.example.dash22b.data
 
 import android.content.Context
+import com.example.dash22b.obd.SsmEcuInit
 import com.example.dash22b.obd.SsmExpressionEvaluator
 import com.example.dash22b.obd.SsmHardcodedParameters
 import com.example.dash22b.obd.SsmSerialManager
@@ -43,7 +44,7 @@ class SsmDataSource(private val context: Context) {
                     // Send init to verify connection
                     val initResponse = serialManager.sendInit(1)
                     if (initResponse != null) {
-                        val romId = initResponse.getRomId()
+                        val romId = SsmEcuInit(initResponse).getRomId()
                         Timber.tag(TAG).i("Connected to ECU, ROM ID: $romId")
                         break
                     } else {

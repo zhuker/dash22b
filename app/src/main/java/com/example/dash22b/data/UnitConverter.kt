@@ -34,7 +34,8 @@ enum class Unit(vararg val names: String) {
     GRAMS_PER_SEC("g/s"),
     GRAMS_PER_REV("g/rev"),
     DAM("dam"),
-    MULTIPLIER("multiplier");
+    MULTIPLIER("multiplier"),
+    SWITCH("switch");
 
     /**
      * Returns the primary display name for this unit.

@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import com.example.dash22b.di.AppContainer
 import com.example.dash22b.obd.SsmSerialManager
+import com.example.dash22b.obd.SsmEcuInit
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.io.File
@@ -42,11 +43,24 @@ class DashApplication : Application() {
         scope.launch {
             Timber.i("Attempting SSM ECU init via USB serial...")
             val ssm = SsmSerialManager(this@DashApplication)
-            
+
             if (ssm.connect()) {
                 val response = ssm.sendInit(target = 1) // ECU
                 if (response != null) {
-                    Timber.i("ECU responded! ROM ID: ${response.getRomId()}")
+                    Timber.i("ECU responded! ROM ID: ${SsmEcuInit(response).getRomId()}")
+
+                    // TODO: Initialize ParameterRegistry from XML with ECU capability filtering
+                    // When serial cable is connected and ECU responds, we should:
+                    // 1. Create SsmEcuInit from response bytes (response already has this data)
+                    // 2. Load logger_METRIC_EN_v370.xml from assets
+                    // 3. Parse with ParameterRegistry.fromXml(xmlStream, ecuInit)
+                    // 4. Replace appContainer.parameterRegistry with the XML-based one
+                    //
+                    // Example:
+                    // val ecuInit = SsmEcuInit(response.toBytes())
+                    // val xmlStream = assets.open("logger_METRIC_EN_v370.xml")
+                    // val registry = ParameterRegistry.fromXml(xmlStream, ecuInit)
+                    // appContainer.updateParameterRegistry(registry)
                 } else {
                     Timber.w("No valid response from ECU")
                 }

@@ -91,7 +91,7 @@ class SsmSerialManager(private val context: Context) {
                                 // Send init now that we're connected
                                 val response = sendInit(1)
                                 if (response != null) {
-                                    Timber.tag(TAG).i("ECU responded! ROM ID: ${response.getRomId()}")
+                                    Timber.tag(TAG).i("ECU responded! ROM ID: ${SsmEcuInit(response).getRomId()}")
                                 }
                                 disconnect()
                             }
@@ -149,7 +149,7 @@ class SsmSerialManager(private val context: Context) {
             port.write(txBytes, WRITE_TIMEOUT_MS)
             
             // Small delay after write (like Python version)
-            Thread.sleep(50)
+            //Thread.sleep(50)
             
             // Read response
             val rxBuffer = ByteArray(256)
@@ -206,7 +206,7 @@ class SsmSerialManager(private val context: Context) {
             
             val response = SsmPacket.fromBytes(responseBytes)
             if (response != null) {
-                val romId = response.getRomId()
+                val romId = SsmEcuInit(response).getRomId()
                 Timber.tag(TAG).i("ECU init successful! ROM ID: $romId")
             } else {
                 Timber.tag(TAG).w("Failed to parse response packet")

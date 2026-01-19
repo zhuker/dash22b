@@ -95,14 +95,7 @@ data class SsmPacket(
         return toBytes().joinToString(" ") { String.format("%02X", it) }
     }
     
-    /**
-     * For init response, extracts the ECU ROM ID (bytes 5-9 of data).
-     */
-    fun getRomId(): String? {
-        // Init response data: [0xFF, romId(5 bytes), capabilities...]
-        if (data.size < 6 || data[0] != 0xFF.toByte()) return null
-        return data.copyOfRange(1, 6).joinToString("") { String.format("%02X", it) }
-    }
+
     
     override fun equals(other: Any?): Boolean {
         if (this === other) return true

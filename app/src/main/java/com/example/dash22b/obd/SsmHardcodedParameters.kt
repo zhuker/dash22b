@@ -7,6 +7,14 @@ import com.example.dash22b.data.Unit
  * These are the 8-15 most important parameters for smooth dashboard display.
  *
  * Based on RomRaider's logger_METRIC_EN_v370.xml parameter definitions.
+ *
+ * TODO: Replace hardcoded parameters with XML parsing
+ * This file provides a fallback for offline development and testing.
+ * When serial cable is connected, use SsmLoggerDefinitionParser to parse
+ * logger_METRIC_EN_v370.xml with capability bit filtering based on actual ECU init response.
+ *
+ * See: SsmLoggerDefinitionParser.parseParameters()
+ * See: ParameterRegistry.fromXml()
  */
 object SsmHardcodedParameters {
     val parameters = listOf(
