@@ -23,7 +23,9 @@ import kotlin.math.min
  * Supports parameter subscription to only poll currently displayed parameters,
  * which is critical for maintaining good refresh rates on the 4800 baud connection.
  */
-class SsmDataSource(private val context: Context) {
+class SsmDataSource(private val context: Context,
+                    private val parameterRegistry: ParameterRegistry
+) {
 
     companion object {
         private const val TAG = "SsmDataSource"
@@ -33,7 +35,7 @@ class SsmDataSource(private val context: Context) {
     }
 
     private val serialManager = SsmSerialManager(context)
-    private val allParameters = SsmHardcodedParameters.parameters
+    private val allParameters = parameterRegistry.getAllDefinitions()
 
     // Parameter subscription - only poll these parameters
     private val _subscribedParams = MutableStateFlow<Set<String>>(emptySet())
@@ -54,11 +56,10 @@ class SsmDataSource(private val context: Context) {
     private fun getParametersToRead(): List<SsmParameter> {
         val subscribed = _subscribedParams.value
         return if (subscribed.isEmpty()) {
-            // No subscription set - poll all parameters (default behavior)
-            allParameters
+            emptyList()
         } else {
             // Filter to only subscribed parameters
-            allParameters.filter { param -> subscribed.contains(param.name) }
+            allParameters.filter { param -> subscribed.contains(param.name) }.map { it as SsmParameter }
         }
     }
 

@@ -73,7 +73,8 @@ enum class ScreenMode {
 fun DashboardScreen() {
     // State for Data
     val context = androidx.compose.ui.platform.LocalContext.current
-    val dataSource = remember { SsmDataSource(context) }
+    val parameterRegistry = LocalParameterRegistry.current
+    val dataSource = remember { SsmDataSource(context, parameterRegistry) }
 
     // Use Repository for TPMS data (populated by Background Service)
     val tpmsRepository = LocalTpmsRepository.current

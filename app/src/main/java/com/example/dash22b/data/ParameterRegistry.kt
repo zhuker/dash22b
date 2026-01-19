@@ -4,7 +4,7 @@ import timber.log.Timber
 import java.io.BufferedReader
 import java.io.InputStreamReader
 
-data class ParameterDefinition(
+abstract class ParameterDefinition(
     val id: String,
     val type: String,
     val unit: Unit,
@@ -33,12 +33,33 @@ data class ParameterDefinition(
     }
 }
 
+class ParameterDefinitionImpl(
+    id: String,
+    type: String,
+    unit: Unit,
+    name: String, // Accessport Monitor Name (e.g., "RPM")
+    description: String,
+    minExpected: String,
+    maxExpected: String,
+    accessportName: String // The name used in log files
+) : ParameterDefinition(
+    id,
+    type,
+    unit,
+    name,
+    description,
+    minExpected,
+    maxExpected,
+    accessportName
+) {
+}
+
 class ParameterRegistry private constructor(
     private val definitions: Map<String, ParameterDefinition>
 ) {
     companion object {
         private val manualMap = mapOf(
-            "Comm Fuel Final" to  "Final Fuel Base", // Commanded Fuel Final (AFR) = Stoichiometric AFR / Final Fueling Base (Lambda)
+            "Comm Fuel Final" to "Final Fuel Base", // Commanded Fuel Final (AFR) = Stoichiometric AFR / Final Fueling Base (Lambda)
             "AF Correction 1" to "A/F Correction 1",
             "AF Learning 1" to "A/F Learning 1",
             "AF Sens 1 Ratio" to "A/F Sens 1 Ratio",
@@ -74,7 +95,7 @@ class ParameterRegistry private constructor(
                     val tokens = line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)".toRegex())
 
                     if (tokens.size >= 9) {
-                        val def = ParameterDefinition(
+                        val def = ParameterDefinitionImpl(
                             id = tokens[0].trim(),
                             type = tokens[1].trim(),
                             unit = Unit.fromString(tokens[2].trim()),
@@ -108,17 +129,7 @@ class ParameterRegistry private constructor(
 
             // Convert SsmParameter objects to ParameterDefinition objects
             com.example.dash22b.obd.SsmHardcodedParameters.parameters.forEach { ssmParam ->
-                val def = ParameterDefinition(
-                    id = ssmParam.id,
-                    type = "float",
-                    unit = ssmParam.unit,
-                    name = ssmParam.name,
-                    description = ssmParam.id,
-                    minExpected = "0",
-                    maxExpected = "100",
-                    accessportName = ssmParam.name
-                )
-                definitions[ssmParam.name.lowercase()] = def
+                definitions[ssmParam.name.lowercase()] = ssmParam
             }
 
             return ParameterRegistry(definitions)
@@ -147,17 +158,7 @@ class ParameterRegistry private constructor(
 
             // Convert SsmParameter objects to ParameterDefinition objects
             ssmParameters.forEach { ssmParam ->
-                val def = ParameterDefinition(
-                    id = ssmParam.id,
-                    type = "float",
-                    unit = ssmParam.unit,
-                    name = ssmParam.name,
-                    description = ssmParam.id,
-                    minExpected = "0",
-                    maxExpected = "100",
-                    accessportName = ssmParam.name
-                )
-                definitions[ssmParam.name.lowercase()] = def
+                definitions[ssmParam.name.lowercase()] = ssmParam
             }
 
             Timber.d("Created ParameterRegistry with ${definitions.size} parameters from XML")
