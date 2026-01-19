@@ -25,7 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import com.example.dash22b.data.Unit
+import com.example.dash22b.data.DisplayUnit
 import com.example.dash22b.data.UnitConverter
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,7 +49,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.LaunchedEffect
 import com.example.dash22b.data.GaugeConfig
 import com.example.dash22b.data.PresetState
@@ -112,8 +111,8 @@ fun DashboardScreen() {
     ParameterBottomSheet(
         isVisible = showDialogForId != null,
         onDismiss = { showDialogForId = null },
-        onParameterSelected = { newParam ->
-            presetManager.updateGaugeConfig(showDialogForId!!, newParam)
+        onParameterSelected = { newParam, newUnit ->
+            presetManager.updateGaugeConfig(showDialogForId!!, newParam, newUnit)
             showDialogForId = null
         }
     )
@@ -309,7 +308,7 @@ fun TpmsValueDisplay(state: com.example.dash22b.data.TpmsState?, label: String) 
 @Composable
 fun NavigationSidebar(
     currentMode: ScreenMode,
-    onModeSelected: (ScreenMode) -> kotlin.Unit
+    onModeSelected: (ScreenMode) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -345,7 +344,7 @@ fun NavigationSidebar(
 @Composable
 fun BottomNavigationBar(
     currentMode: ScreenMode,
-    onModeSelected: (ScreenMode) -> kotlin.Unit
+    onModeSelected: (ScreenMode) -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -381,7 +380,7 @@ fun NavItem(
     icon: ImageVector,
     label: String,
     isSelected: Boolean,
-    onClick: () -> kotlin.Unit
+    onClick: () -> Unit
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -420,12 +419,12 @@ fun DynamicCircularGauge(
     data: EngineData,
     modifier: Modifier = Modifier,
     isBig: Boolean = false,
-    onLongClick: () -> kotlin.Unit
+    onLongClick: () -> Unit
 ) {
     // Handle disabled gauge
     if (config.parameterName == GAUGE_DISABLED_PARAM) {
         CircularGauge(
-            value = com.example.dash22b.data.ValueWithUnit(0f, Unit.UNKNOWN),
+            value = com.example.dash22b.data.ValueWithUnit(0f, DisplayUnit.UNKNOWN),
             minValue = 0f,
             maxValue = 100f,
             label = "—",
@@ -445,21 +444,24 @@ fun DynamicCircularGauge(
     val vwu =
     if (!data.values.containsKey(key)) {
         Timber.w("no value for '$key' '${def?.name}' ${data.values.keys}")
-        com.example.dash22b.data.ValueWithUnit(0f, Unit.UNKNOWN)
+        com.example.dash22b.data.ValueWithUnit(0f, DisplayUnit.UNKNOWN)
     } else {
         data.values[key]!!
     }
 
     // Heuristic or Default Target Unit
-    // If definition has a preferred unit, use it. Otherwise use the log unit.
-    var targetUnit = def?.unit ?: vwu.unit
+    // If configuration has a preferred unit, use it.
+    // Otherwise, if definition has a preferred unit, use it.
+    // Otherwise use the log unit.
+    var targetUnit = config.getDisplayUnit() ?: def?.unit ?: vwu.unit
 
-    // Overrides for specific gauges if registry defaults aren't what we want for display
-    // e.g. defined as 'psi' but we want 'bar'
-    if (key.contains("Boost") || key.contains("Pressure")) {
-        targetUnit = Unit.BAR
-    } else if (targetUnit == Unit.F || vwu.unit == Unit.F) {
-        targetUnit = Unit.C // Always prefer C for display?
+    // Heuristic overrides ONLY if no specific unit was selected in config
+    if (config.displayUnitName == null) {
+        if (key.contains("Boost") || key.contains("Pressure")) {
+            targetUnit = DisplayUnit.BAR
+        } else if (targetUnit == DisplayUnit.F || vwu.unit == DisplayUnit.F) {
+            targetUnit = DisplayUnit.C // Always prefer C for display?
+        }
     }
 
     val displayValue = vwu.to(targetUnit)
@@ -501,8 +503,8 @@ fun PortraitGaugesContent(
     engineData: EngineData,
     gaugeConfigs: List<GaugeConfig>,
     presetState: PresetState,
-    onGaugeLongClick: (Int) -> kotlin.Unit,
-    onPresetClick: () -> kotlin.Unit
+    onGaugeLongClick: (Int) -> Unit,
+    onPresetClick: () -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         // Top Row: Big Gauges (IDs 0, 1)
@@ -567,8 +569,8 @@ fun GaugesContent(
     engineData: EngineData,
     gaugeConfigs: List<GaugeConfig>,
     presetState: PresetState,
-    onGaugeLongClick: (Int) -> kotlin.Unit,
-    onPresetClick: () -> kotlin.Unit
+    onGaugeLongClick: (Int) -> Unit,
+    onPresetClick: () -> Unit
 ) {
     Row(modifier = Modifier.fillMaxSize()) {
         // Left Column (Large Gauges IDs 0, 1)
@@ -630,11 +632,11 @@ fun GaugesContent(
 fun GraphsContent(data: EngineData) {
      // A grid of graphs
      // Helper to convert history
-     fun convertHist(history: List<Float>, fromUnit: Unit, toUnit: Unit): List<Float> {
+     fun convertHist(history: List<Float>, fromUnit: DisplayUnit, toUnit: DisplayUnit): List<Float> {
          return history.map { UnitConverter.convert(it, fromUnit, toUnit) }
      }
 
-     fun convertVal(value: Float, fromUnit: Unit, toUnit: Unit): Float {
+     fun convertVal(value: Float, fromUnit: DisplayUnit, toUnit: DisplayUnit): Float {
          return UnitConverter.convert(value, fromUnit, toUnit)
      }
 
@@ -644,7 +646,7 @@ fun GraphsContent(data: EngineData) {
              LineGraph(
                 dataPoints = data.rpmHistory, // RPM usually needs no conversion
                 label = "RPM",
-                 unit = Unit.RPM,
+                 unit = DisplayUnit.RPM,
                 currentValue = data.rpm.value,
                 color = GaugeGreen,
                 modifier = Modifier.weight(1f).padding(4.dp)
@@ -652,7 +654,7 @@ fun GraphsContent(data: EngineData) {
             LineGraph(
                 dataPoints = listOf(), // Spark Advance History TBD
                 label = "Spark Adv",
-                unit = Unit.DEGREES,
+                unit = DisplayUnit.DEGREES,
                 currentValue = data.sparkLines.value,
                 color = GaugeTeal,
                 modifier = Modifier.weight(1f).padding(4.dp)
@@ -660,9 +662,9 @@ fun GraphsContent(data: EngineData) {
             LineGraph(
                 dataPoints = listOf(), // Coolant History TBD
                 label = "Coolant",
-                unit = Unit.C,
+                unit = DisplayUnit.C,
                 currentValue = convertVal(data.coolantTemp.value, data.coolantTemp.unit,
-                    Unit.C
+                    DisplayUnit.C
                 ),
                 color = GaugeOrange,
                 modifier = Modifier.weight(1f).padding(4.dp)
@@ -670,7 +672,7 @@ fun GraphsContent(data: EngineData) {
         }
         // Row 2
         Row(modifier = Modifier.weight(1f)) {
-            val boostUnit = Unit.BAR
+            val boostUnit = DisplayUnit.BAR
              LineGraph(
                 dataPoints = convertHist(data.boostHistory, data.boost.unit, boostUnit),
                 label = "Boost",
@@ -682,7 +684,7 @@ fun GraphsContent(data: EngineData) {
             LineGraph(
                 dataPoints = listOf(), // AFR History TBD
                 label = "AFR",
-                unit = Unit.AFR,
+                unit = DisplayUnit.AFR,
                 currentValue = data.afr.value,
                 color = GaugeTeal,
                 modifier = Modifier.weight(1f).padding(4.dp)
@@ -690,8 +692,8 @@ fun GraphsContent(data: EngineData) {
             LineGraph(
                 dataPoints = listOf(), // IAT History TBD
                 label = "IAT",
-                unit = Unit.C,
-                currentValue = convertVal(data.iat.value, data.iat.unit, Unit.C),
+                unit = DisplayUnit.C,
+                currentValue = convertVal(data.iat.value, data.iat.unit, DisplayUnit.C),
                 color = GaugeOrange,
                 modifier = Modifier.weight(1f).padding(4.dp)
             )
@@ -701,7 +703,7 @@ fun GraphsContent(data: EngineData) {
              LineGraph(
                 dataPoints = listOf(), // Pulse History TBD
                 label = "Pulse Width",
-                 unit = Unit.MILLISECONDS,
+                 unit = DisplayUnit.MILLISECONDS,
                 currentValue = data.pulseWidth.value,
                 color = GaugeGreen,
                 modifier = Modifier.weight(1f).padding(4.dp)
@@ -709,7 +711,7 @@ fun GraphsContent(data: EngineData) {
             LineGraph(
                 dataPoints = listOf(), // Duty History TBD
                 label = "Duty Cycle",
-                unit = Unit.PERCENT,
+                unit = DisplayUnit.PERCENT,
                 currentValue = data.dutyCycle.value,
                 color = GaugeTeal,
                 modifier = Modifier.weight(1f).padding(4.dp)
@@ -717,7 +719,7 @@ fun GraphsContent(data: EngineData) {
              LineGraph(
                 dataPoints = listOf(), // MAF History TBD
                 label = "MAF",
-                 unit = Unit.GRAMS_PER_SEC,
+                 unit = DisplayUnit.GRAMS_PER_SEC,
                 currentValue = data.maf.value,
                 color = GaugeOrange,
                 modifier = Modifier.weight(1f).padding(4.dp)

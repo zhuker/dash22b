@@ -3,7 +3,6 @@ package com.example.dash22b.data
 import android.content.Context
 import com.example.dash22b.obd.SsmEcuInit
 import com.example.dash22b.obd.SsmExpressionEvaluator
-import com.example.dash22b.obd.SsmHardcodedParameters
 import com.example.dash22b.obd.SsmParameter
 import com.example.dash22b.obd.SsmSerialManager
 import kotlinx.coroutines.CancellationException
@@ -229,37 +228,37 @@ class SsmDataSource(private val context: Context,
 
         // Map to EngineData fields
         // Helper to get value or default
-        fun getV(key: String, defaultUnit: Unit = Unit.UNKNOWN): ValueWithUnit {
+        fun getV(key: String, defaultUnit: DisplayUnit = DisplayUnit.UNKNOWN): ValueWithUnit {
             return dynamicValues[key] ?: ValueWithUnit(0f, defaultUnit)
         }
 
         // Unit conversions
-        val rpm = getV("Engine Speed", Unit.RPM)
+        val rpm = getV("Engine Speed", DisplayUnit.RPM)
 
         // Coolant: Convert °C to °F
-        val coolantC = getV("Coolant Temp", Unit.C)
-        val coolant = coolantC.to(Unit.F)
+        val coolantC = getV("Coolant Temp", DisplayUnit.C)
+        val coolant = coolantC.to(DisplayUnit.F)
 
         // Boost: Convert kPa to bar (gauge pressure)
         // SSM reports absolute pressure, subtract atmospheric (101.3 kPa) for gauge pressure
-        val boostKpa = getV("Boost", Unit.KPA)
-        val boost = ValueWithUnit(UnitConverter.convert(boostKpa.value - 101.3f, Unit.KPA, Unit.BAR),
-            Unit.BAR
+        val boostKpa = getV("Boost", DisplayUnit.KPA)
+        val boost = ValueWithUnit(UnitConverter.convert(boostKpa.value - 101.3f, DisplayUnit.KPA, DisplayUnit.BAR),
+            DisplayUnit.BAR
         )
 
         // Intake Air Temp: Convert °C to °F
-        val iatC = getV("Intake Air Temp", Unit.C)
-        val iat = iatC.to(Unit.F)
+        val iatC = getV("Intake Air Temp", DisplayUnit.C)
+        val iat = iatC.to(DisplayUnit.F)
 
         // Mass Airflow: Already in g/s
-        val maf = getV("Mass Airflow", Unit.GRAMS_PER_SEC)
+        val maf = getV("Mass Airflow", DisplayUnit.GRAMS_PER_SEC)
 
-        val battery = getV("Battery Voltage", Unit.VOLTS)
-        val throttle = getV("Throttle", Unit.PERCENT)
-        val spark = getV("Ignition Timing", Unit.DEGREES)
-        val knockCorrection = getV("Knock Correction", Unit.DEGREES)
-        val map = getV("MAP", Unit.KPA)
-        val speed = getV("Vehicle Speed", Unit.KMH)
+        val battery = getV("Battery Voltage", DisplayUnit.VOLTS)
+        val throttle = getV("Throttle", DisplayUnit.PERCENT)
+        val spark = getV("Ignition Timing", DisplayUnit.DEGREES)
+        val knockCorrection = getV("Knock Correction", DisplayUnit.DEGREES)
+        val map = getV("MAP", DisplayUnit.KPA)
+        val speed = getV("Vehicle Speed", DisplayUnit.KMH)
 
         // Log final converted values only for parameters that were read
         val valuesLog = parametersRead.mapNotNull { param ->

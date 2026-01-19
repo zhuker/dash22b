@@ -26,10 +26,10 @@ data class GaugeConfig(
     val displayUnitName: String? = null // Optional unit override as string (null = use parameter default)
 ) {
     /** Gets the displayUnit as a Unit enum, or null if not set */
-    fun getDisplayUnit(): com.example.dash22b.data.Unit? {
+    fun getDisplayUnit(): com.example.dash22b.data.DisplayUnit? {
         return displayUnitName?.let {
             try {
-                com.example.dash22b.data.Unit.valueOf(it)
+                com.example.dash22b.data.DisplayUnit.valueOf(it)
             } catch (e: IllegalArgumentException) {
                 null
             }

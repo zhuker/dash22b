@@ -1,6 +1,6 @@
 package com.example.dash22b.obd
 
-import com.example.dash22b.data.Unit
+import com.example.dash22b.data.DisplayUnit
 
 /**
  * Hardcoded SSM parameter definitions for real-time ECU monitoring.
@@ -25,7 +25,7 @@ object SsmHardcodedParameters {
             address = 0x00000E,
             length = 2,
             expression = "x/4",
-            unit = Unit.RPM
+            unit = DisplayUnit.RPM
         ),
         SsmParameter(
             id = "P2",
@@ -33,7 +33,7 @@ object SsmHardcodedParameters {
             address = 0x000008,
             length = 1,
             expression = "x-40",
-            unit = Unit.C
+            unit = DisplayUnit.C
         ),
         SsmParameter(
             id = "P25",
@@ -41,7 +41,7 @@ object SsmHardcodedParameters {
             address = 0x000024,
             length = 1,
             expression = "x-128",
-            unit = Unit.KPA
+            unit = DisplayUnit.KPA
         ),
         SsmParameter(
             id = "P13",
@@ -49,7 +49,7 @@ object SsmHardcodedParameters {
             address = 0x000015,
             length = 1,
             expression = "x*100/255",
-            unit = Unit.PERCENT
+            unit = DisplayUnit.PERCENT
         ),
         SsmParameter(
             id = "P10",
@@ -57,7 +57,7 @@ object SsmHardcodedParameters {
             address = 0x000011,
             length = 1,
             expression = "(x-128)/2",
-            unit = Unit.DEGREES
+            unit = DisplayUnit.DEGREES
         ),
         SsmParameter(
             id = "P23",
@@ -65,7 +65,7 @@ object SsmHardcodedParameters {
             address = 0x000022,
             length = 1,
             expression = "(x-128)/2",
-            unit = Unit.DEGREES
+            unit = DisplayUnit.DEGREES
         ),
         SsmParameter(
             id = "P11",
@@ -73,7 +73,7 @@ object SsmHardcodedParameters {
             address = 0x000012,
             length = 1,
             expression = "x-40",
-            unit = Unit.C
+            unit = DisplayUnit.C
         ),
         SsmParameter(
             id = "P17",
@@ -81,7 +81,7 @@ object SsmHardcodedParameters {
             address = 0x00001C,
             length = 1,
             expression = "x*8/100",
-            unit = Unit.VOLTS
+            unit = DisplayUnit.VOLTS
         ),
 
         // Optional additional parameters
@@ -91,7 +91,7 @@ object SsmHardcodedParameters {
             address = 0x00000D,
             length = 1,
             expression = "x",
-            unit = Unit.KPA
+            unit = DisplayUnit.KPA
         ),
         SsmParameter(
             id = "P9",
@@ -99,7 +99,7 @@ object SsmHardcodedParameters {
             address = 0x000010,
             length = 1,
             expression = "x",
-            unit = Unit.KMH
+            unit = DisplayUnit.KMH
         ),
         SsmParameter(
             id = "P12",
@@ -107,7 +107,7 @@ object SsmHardcodedParameters {
             address = 0x000013,
             length = 2,
             expression = "x/100",
-            unit = Unit.GRAMS_PER_SEC
+            unit = DisplayUnit.GRAMS_PER_SEC
         )
     )
 }

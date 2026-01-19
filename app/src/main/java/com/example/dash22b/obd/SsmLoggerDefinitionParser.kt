@@ -1,6 +1,6 @@
 package com.example.dash22b.obd
 
-import com.example.dash22b.data.Unit
+import com.example.dash22b.data.DisplayUnit
 import timber.log.Timber
 import java.io.InputStream
 import javax.xml.parsers.DocumentBuilderFactory
@@ -156,7 +156,7 @@ class SsmLoggerDefinitionParser(private val ecuInit: SsmEcuInit?) {
 
         // Parse first conversion
         var expression: String? = null
-        var unit: Unit = Unit.UNKNOWN
+        var unit: DisplayUnit = DisplayUnit.UNKNOWN
         val conversionNodes = element.getElementsByTagName("conversion")
         if (conversionNodes.length > 0) {
             val conversionElement = conversionNodes.item(0) as Element
@@ -230,7 +230,7 @@ class SsmLoggerDefinitionParser(private val ecuInit: SsmEcuInit?) {
 
         // Parse conversions (common to all ECUs for this parameter)
         var expression: String? = null
-        var unit: Unit = Unit.UNKNOWN
+        var unit: DisplayUnit = DisplayUnit.UNKNOWN
         val conversionNodes = element.getElementsByTagName("conversion")
         if (conversionNodes.length > 0) {
             val conversionElement = conversionNodes.item(0) as Element
@@ -305,7 +305,7 @@ class SsmLoggerDefinitionParser(private val ecuInit: SsmEcuInit?) {
             address = address,
             length = 1, // Switches are always single byte reads
             expression = expression, // Special expression for switches
-            unit = Unit.SWITCH
+            unit = DisplayUnit.SWITCH
         )
     }
 
@@ -325,30 +325,30 @@ class SsmLoggerDefinitionParser(private val ecuInit: SsmEcuInit?) {
     /**
      * Map XML unit string to Unit enum.
      */
-    private fun parseUnit(unitStr: String): Unit {
+    private fun parseUnit(unitStr: String): DisplayUnit {
         return when (unitStr.lowercase()) {
-            "rpm" -> Unit.RPM
-            "c", "°c" -> Unit.C
-            "f", "°f" -> Unit.F
-            "%", "percent" -> Unit.PERCENT
-            "v", "volts" -> Unit.VOLTS
-            "kpa" -> Unit.KPA
-            "bar" -> Unit.BAR
-            "psi" -> Unit.PSI
-            "km/h" -> Unit.KMH
-            "mph" -> Unit.MPH
-            "g/s" -> Unit.GRAMS_PER_SEC
-            "g/rev" -> Unit.GRAMS_PER_REV
-            "degrees", "°" -> Unit.DEGREES
-            "ms" -> Unit.MILLISECONDS
-            "ma" -> Unit.MILLIAMPS
-            "lambda" -> Unit.LAMBDA
-            "afr" -> Unit.AFR
-            "multiplier" -> Unit.MULTIPLIER
-            "switch" -> Unit.SWITCH
+            "rpm" -> DisplayUnit.RPM
+            "c", "°c" -> DisplayUnit.C
+            "f", "°f" -> DisplayUnit.F
+            "%", "percent" -> DisplayUnit.PERCENT
+            "v", "volts" -> DisplayUnit.VOLTS
+            "kpa" -> DisplayUnit.KPA
+            "bar" -> DisplayUnit.BAR
+            "psi" -> DisplayUnit.PSI
+            "km/h" -> DisplayUnit.KMH
+            "mph" -> DisplayUnit.MPH
+            "g/s" -> DisplayUnit.GRAMS_PER_SEC
+            "g/rev" -> DisplayUnit.GRAMS_PER_REV
+            "degrees", "°" -> DisplayUnit.DEGREES
+            "ms" -> DisplayUnit.MILLISECONDS
+            "ma" -> DisplayUnit.MILLIAMPS
+            "lambda" -> DisplayUnit.LAMBDA
+            "afr" -> DisplayUnit.AFR
+            "multiplier" -> DisplayUnit.MULTIPLIER
+            "switch" -> DisplayUnit.SWITCH
             else -> {
                 Timber.v("Unknown unit: $unitStr")
-                Unit.UNKNOWN
+                DisplayUnit.UNKNOWN
             }
         }
     }

@@ -7,7 +7,7 @@ import java.io.InputStreamReader
 abstract class ParameterDefinition(
     val id: String,
     val type: String,
-    val unit: Unit,
+    val unit: DisplayUnit,
     val name: String, // Accessport Monitor Name (e.g., "RPM")
     val description: String,
     val minExpected: String,
@@ -36,7 +36,7 @@ abstract class ParameterDefinition(
 class ParameterDefinitionImpl(
     id: String,
     type: String,
-    unit: Unit,
+    unit: DisplayUnit,
     name: String, // Accessport Monitor Name (e.g., "RPM")
     description: String,
     minExpected: String,
@@ -98,7 +98,7 @@ class ParameterRegistry private constructor(
                         val def = ParameterDefinitionImpl(
                             id = tokens[0].trim(),
                             type = tokens[1].trim(),
-                            unit = Unit.fromString(tokens[2].trim()),
+                            unit = DisplayUnit.fromString(tokens[2].trim()),
                             name = tokens[3].replace("\"", "").trim(), // Original Name
                             description = tokens[4].replace("\"", "").trim(),
                             minExpected = tokens[5].trim(),

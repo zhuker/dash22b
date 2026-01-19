@@ -95,7 +95,7 @@ class LogFileDataSource(
                 val rawVal = getF(col.index)
                 // Store RAW value with its UNIT
                 dynamicValues[col.definition.accessportName] =
-                    ValueWithUnit(rawVal, Unit.fromString(col.logUnit))
+                    ValueWithUnit(rawVal, DisplayUnit.fromString(col.logUnit))
             }
 
             // Backward Compatibility Mapping - Populate Standard Fields with ValueWithUnit items from Map
@@ -104,25 +104,25 @@ class LogFileDataSource(
             fun getV(
                 key: String,
                 altKey: String? = null,
-                defaultUnit: Unit = Unit.UNKNOWN
+                defaultUnit: DisplayUnit = DisplayUnit.UNKNOWN
             ): ValueWithUnit {
                 return dynamicValues[key]
                     ?: (if (altKey != null) dynamicValues[altKey] else null)
                     ?: ValueWithUnit(0f, defaultUnit)
             }
 
-            val rpm = getV("RPM", "Engine Speed", Unit.RPM)
+            val rpm = getV("RPM", "Engine Speed", DisplayUnit.RPM)
             val boost =
-                getV("Boost", "Manifold Relative Pressure", Unit.PSI) // Default unit guess
-            val battery = getV("Battery Voltage", null, Unit.VOLTS)
-            val pulse = getV("Inj Pulse Width", null, Unit.MILLISECONDS)
-            val coolant = getV("Coolant Temp", null, Unit.F)
-            val spark = getV("Ignition Timing", null, Unit.DEGREES)
-            val duty = getV("Inj Duty Cycle", "Injector Duty Cycle", Unit.PERCENT)
-            val speed = getV("Vehicle Speed", null, Unit.KMH)
-            val iat = getV("Intake Temp", null, Unit.F)
-            val afr = getV("AFR", "AF Sens 1 Ratio", Unit.AFR)
-            val maf = getV("Mass Airflow", null, Unit.GRAMS_PER_SEC)
+                getV("Boost", "Manifold Relative Pressure", DisplayUnit.PSI) // Default unit guess
+            val battery = getV("Battery Voltage", null, DisplayUnit.VOLTS)
+            val pulse = getV("Inj Pulse Width", null, DisplayUnit.MILLISECONDS)
+            val coolant = getV("Coolant Temp", null, DisplayUnit.F)
+            val spark = getV("Ignition Timing", null, DisplayUnit.DEGREES)
+            val duty = getV("Inj Duty Cycle", "Injector Duty Cycle", DisplayUnit.PERCENT)
+            val speed = getV("Vehicle Speed", null, DisplayUnit.KMH)
+            val iat = getV("Intake Temp", null, DisplayUnit.F)
+            val afr = getV("AFR", "AF Sens 1 Ratio", DisplayUnit.AFR)
+            val maf = getV("Mass Airflow", null, DisplayUnit.GRAMS_PER_SEC)
 
             val newData = EngineData(
                 timestamp = currentTimestamp,

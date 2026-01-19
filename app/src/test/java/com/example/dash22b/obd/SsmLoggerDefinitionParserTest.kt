@@ -1,6 +1,6 @@
 package com.example.dash22b.obd
 
-import com.example.dash22b.data.Unit
+import com.example.dash22b.data.DisplayUnit
 import org.junit.Test
 import org.junit.Assert.*
 import java.io.File
@@ -274,10 +274,10 @@ class SsmLoggerDefinitionParserTest {
         assertTrue(!parameters.isEmpty())
 
         println("Found parameters:")
-        val standards = parameters.filter { !it.id.startsWith("E") && it.unit != Unit.SWITCH }
+        val standards = parameters.filter { !it.id.startsWith("E") && it.unit != DisplayUnit.SWITCH }
         standards.forEach { println("P: ${it.id} - ${it.name} (${it.address})") }
 
-        val switches = parameters.filter { it.unit == Unit.SWITCH }
+        val switches = parameters.filter { it.unit == DisplayUnit.SWITCH }
         if (switches.isNotEmpty()) {
             println("\nFound switches:")
             switches.forEach { println("S: ${it.id} - ${it.name} (${it.address})") }

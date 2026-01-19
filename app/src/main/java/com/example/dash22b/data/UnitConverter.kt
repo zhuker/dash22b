@@ -2,7 +2,7 @@ package com.example.dash22b.data
 
 import timber.log.Timber
 
-enum class Unit(vararg val names: String) {
+enum class DisplayUnit(vararg val names: String) {
     UNKNOWN(""),
 
     // Temperature units
@@ -37,16 +37,25 @@ enum class Unit(vararg val names: String) {
     MULTIPLIER("multiplier"),
     SWITCH("switch");
 
-    /**
-     * Returns the primary display name for this unit.
-     * Returns empty string for UNKNOWN.
-     */
-    fun displayName(): String = names.firstOrNull() ?: ""
+    fun getCompatibleUnits(): List<DisplayUnit> {
+        return when (this) {
+            BAR, PSI, KPA -> listOf(BAR, PSI, KPA)
+            C, F -> listOf(C, F)
+            MPH, KMH -> listOf(MPH, KMH)
+            LAMBDA, AFR -> listOf(LAMBDA, AFR)
+            DAM, MULTIPLIER -> listOf(DAM, MULTIPLIER)
+            else -> listOf(this)
+        }
+    }
+
+    fun displayName(): String {
+        return names[0]
+    }
 
     companion object {
 
-        fun fromString(value: String): Unit {
-            for (unit in Unit.entries) {
+        fun fromString(value: String): DisplayUnit {
+            for (unit in DisplayUnit.entries) {
                 if (unit.names.contains(value)) {
                     return unit
                 }
@@ -58,31 +67,31 @@ enum class Unit(vararg val names: String) {
 }
 
 object UnitConverter {
-    fun convert(value: Float, from: Unit, to: Unit): Float {
+    fun convert(value: Float, from: DisplayUnit, to: DisplayUnit): Float {
         if (from == to) return value
-        if (from == Unit.UNKNOWN) return value
+        if (from == DisplayUnit.UNKNOWN) return value
 
         return when {
-            (from == Unit.DAM && to == Unit.MULTIPLIER) -> value
-            (from == Unit.MULTIPLIER && to == Unit.DAM) -> value
-            (from == Unit.LAMBDA && to == Unit.AFR) -> 14.7f * value
-            (from == Unit.AFR && to == Unit.LAMBDA) -> value / 14.7f
+            (from == DisplayUnit.DAM && to == DisplayUnit.MULTIPLIER) -> value
+            (from == DisplayUnit.MULTIPLIER && to == DisplayUnit.DAM) -> value
+            (from == DisplayUnit.LAMBDA && to == DisplayUnit.AFR) -> 14.7f * value
+            (from == DisplayUnit.AFR && to == DisplayUnit.LAMBDA) -> value / 14.7f
             // Pressure
-            (from == Unit.PSI && to == Unit.KPA) -> value * 6.89475729f
-            (from == Unit.KPA && to == Unit.PSI) -> value * 0.145038f
+            (from == DisplayUnit.PSI && to == DisplayUnit.KPA) -> value * 6.89475729f
+            (from == DisplayUnit.KPA && to == DisplayUnit.PSI) -> value * 0.145038f
 
-            (from == Unit.PSI && to == Unit.BAR) -> value * 0.0689476f
-            (from == Unit.KPA && to == Unit.BAR) -> value * 0.01f
-            (from == Unit.BAR && to == Unit.PSI) -> value * 14.5038f
-            (from == Unit.BAR && to == Unit.KPA) -> value * 100f
+            (from == DisplayUnit.PSI && to == DisplayUnit.BAR) -> value * 0.0689476f
+            (from == DisplayUnit.KPA && to == DisplayUnit.BAR) -> value * 0.01f
+            (from == DisplayUnit.BAR && to == DisplayUnit.PSI) -> value * 14.5038f
+            (from == DisplayUnit.BAR && to == DisplayUnit.KPA) -> value * 100f
 
             // Temperature
-            (from == Unit.F && to == Unit.C) -> (value - 32f) * 5f / 9f
-            (from == Unit.C && to == Unit.F) -> (value * 9f / 5f) + 32f
+            (from == DisplayUnit.F && to == DisplayUnit.C) -> (value - 32f) * 5f / 9f
+            (from == DisplayUnit.C && to == DisplayUnit.F) -> (value * 9f / 5f) + 32f
 
             // Speed
-            (from == Unit.MPH && to == Unit.KMH) -> value * 1.60934f
-            (from == Unit.KMH && to == Unit.MPH) -> value / 1.60934f
+            (from == DisplayUnit.MPH && to == DisplayUnit.KMH) -> value * 1.60934f
+            (from == DisplayUnit.KMH && to == DisplayUnit.MPH) -> value / 1.60934f
 
             else -> {
                 Timber.w("Unknown conversion from '$from' to '$to'")

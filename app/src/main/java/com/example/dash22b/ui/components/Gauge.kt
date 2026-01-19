@@ -33,7 +33,7 @@ fun CircularGauge(
     label: String,
     color: Color = GaugeGreen,
     modifier: Modifier = Modifier,
-    onLongClick: () -> kotlin.Unit = {}
+    onLongClick: () -> Unit = {}
 ) {
     Box(
         modifier = modifier
