@@ -50,9 +50,6 @@ import java.util.Date
 import java.util.Locale
 
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
 import com.example.dash22b.data.GaugeConfig
 import com.example.dash22b.data.PresetState
@@ -61,6 +58,7 @@ import com.example.dash22b.di.LocalParameterRegistry
 import com.example.dash22b.di.LocalPresetManager
 import com.example.dash22b.di.LocalTpmsRepository
 import com.example.dash22b.service.TpmsService
+import com.example.dash22b.ui.components.ParameterBottomSheet
 import com.example.dash22b.ui.components.PresetBottomSheet
 import com.example.dash22b.ui.components.PresetLabel
 import com.example.dash22b.data.PresetManager.Companion.GAUGE_DISABLED_PARAM
@@ -70,55 +68,6 @@ enum class ScreenMode {
     GAUGES, GRAPHS, OTHER
 }
 
-@Composable
-fun ParameterSelectionDialog(
-    onDismiss: () -> kotlin.Unit,
-    onParameterSelected: (String) -> kotlin.Unit
-) {
-    val parameterRegistry = LocalParameterRegistry.current
-    val options = remember(parameterRegistry) { parameterRegistry.getAllDefinitions() }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Select Parameter") },
-        text = {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(300.dp)
-            ) {
-                // "None" option at the top to disable the gauge
-                item {
-                    Text(
-                        text = "None (disable gauge)",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onParameterSelected(GAUGE_DISABLED_PARAM) }
-                            .padding(16.dp),
-                        color = Color.Gray
-                    )
-                    androidx.compose.material3.Divider(color = Color.DarkGray)
-                }
-                items(options) { param ->
-                    Text(
-                        text = "${param.name} (${param.unit.displayName()})",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onParameterSelected(param.accessportName) }
-                            .padding(16.dp)
-                    )
-                    androidx.compose.material3.Divider(color = Color.DarkGray)
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
-    )
-}
 
 @Composable
 fun DashboardScreen() {
@@ -158,15 +107,15 @@ fun DashboardScreen() {
     // State for preset bottom sheet
     var showPresetSheet by remember { mutableStateOf(false) }
 
-    if (showDialogForId != null) {
-        ParameterSelectionDialog(
-            onDismiss = { showDialogForId = null },
-            onParameterSelected = { newParam ->
-                presetManager.updateGaugeConfig(showDialogForId!!, newParam)
-                showDialogForId = null
-            }
-        )
-    }
+    // Parameter selection bottom sheet
+    ParameterBottomSheet(
+        isVisible = showDialogForId != null,
+        onDismiss = { showDialogForId = null },
+        onParameterSelected = { newParam ->
+            presetManager.updateGaugeConfig(showDialogForId!!, newParam)
+            showDialogForId = null
+        }
+    )
 
     // Preset bottom sheet
     PresetBottomSheet(
