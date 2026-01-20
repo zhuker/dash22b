@@ -52,11 +52,11 @@ import java.util.Locale
 import androidx.compose.runtime.LaunchedEffect
 import com.example.dash22b.data.GaugeConfig
 import com.example.dash22b.data.PresetState
-import com.example.dash22b.data.SsmDataSource
 import com.example.dash22b.di.LocalParameterRegistry
 import com.example.dash22b.di.LocalPresetManager
+import com.example.dash22b.di.LocalSsmRepository
 import com.example.dash22b.di.LocalTpmsRepository
-import com.example.dash22b.service.TpmsService
+import com.example.dash22b.service.DashService
 import com.example.dash22b.ui.components.ParameterBottomSheet
 import com.example.dash22b.ui.components.PresetBottomSheet
 import com.example.dash22b.ui.components.PresetLabel
@@ -70,10 +70,9 @@ enum class ScreenMode {
 
 @Composable
 fun DashboardScreen() {
-    // State for Data
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val parameterRegistry = LocalParameterRegistry.current
-    val dataSource = remember { SsmDataSource(context, parameterRegistry) }
+    // SSM data from service via repository
+    val ssmRepository = LocalSsmRepository.current
+    val engineDataRaw by ssmRepository.engineData.collectAsState()
 
     // Use Repository for TPMS data (populated by Background Service)
     val tpmsRepository = LocalTpmsRepository.current
@@ -86,13 +85,10 @@ fun DashboardScreen() {
     val gaugeConfigs by presetManager.currentConfigs.collectAsState()
     val subscribedParams by presetManager.subscribedParameters.collectAsState()
 
-    // Subscribe to parameters when they change
+    // Subscribe to parameters when they change (goes to repository, service observes it)
     LaunchedEffect(subscribedParams) {
-        dataSource.subscribeToParameters(subscribedParams)
+        ssmRepository.subscribeToParameters(subscribedParams)
     }
-
-    val dataFlow = remember(dataSource) { dataSource.getEngineData() }
-    val engineDataRaw by dataFlow.collectAsState(initial = EngineData())
 
     val engineData = remember(engineDataRaw, tpmsData) {
         engineDataRaw.copy(tpms = tpmsData)
@@ -277,7 +273,7 @@ fun TpmsValueDisplay(state: com.example.dash22b.data.TpmsState?, label: String) 
     
     // Calculate staleness locally so UI updates even if Service stops
     val timeSinceUpdate = System.currentTimeMillis() - state.timestamp
-    val isLocallyStale = timeSinceUpdate > TpmsService.STALE_TIMEOUT_MS
+    val isLocallyStale = timeSinceUpdate > DashService.STALE_TIMEOUT_MS
     
     val pressureText = if (isLocallyStale) "--" else String.format("%.1f", state.pressure.value)
     val tempText = if (isLocallyStale) "NA" else String.format("%.0f${state.temp.unit.displayName()}", state.temp.value)

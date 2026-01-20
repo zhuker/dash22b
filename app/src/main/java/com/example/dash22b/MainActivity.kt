@@ -22,7 +22,9 @@ import android.content.IntentFilter
 import androidx.compose.runtime.CompositionLocalProvider
 import com.example.dash22b.di.LocalParameterRegistry
 import com.example.dash22b.di.LocalPresetManager
+import com.example.dash22b.di.LocalSsmRepository
 import com.example.dash22b.di.LocalTpmsRepository
+import com.example.dash22b.service.DashService
 import timber.log.Timber
 import kotlin.system.exitProcess
 
@@ -30,7 +32,7 @@ class MainActivity : ComponentActivity() {
 
     private val exitReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == com.example.dash22b.service.TpmsService.ACTION_FORCE_EXIT) {
+            if (intent?.action == DashService.ACTION_FORCE_EXIT) {
                 Timber.d("Received ACTION_FORCE_EXIT intent")
                 finishAndRemoveTask()
                 exitProcess(0)
@@ -40,7 +42,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        val filter = IntentFilter(com.example.dash22b.service.TpmsService.ACTION_FORCE_EXIT)
+        val filter = IntentFilter(DashService.ACTION_FORCE_EXIT)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(exitReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
@@ -53,7 +55,7 @@ class MainActivity : ComponentActivity() {
             ) { permissions ->
                 val allGranted = permissions.entries.all { it.value }
                 if (allGranted) {
-                    val intent = android.content.Intent(this, com.example.dash22b.service.TpmsService::class.java)
+                    val intent = android.content.Intent(this, DashService::class.java)
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                         startForegroundService(intent)
                     } else {
@@ -75,7 +77,7 @@ class MainActivity : ComponentActivity() {
             requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
         } else {
              // For older Android versions, just start it
-             val intent = android.content.Intent(this, com.example.dash22b.service.TpmsService::class.java)
+             val intent = android.content.Intent(this, DashService::class.java)
              if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                  startForegroundService(intent)
              } else {
@@ -90,7 +92,8 @@ class MainActivity : ComponentActivity() {
             CompositionLocalProvider(
                 LocalParameterRegistry provides container.parameterRegistry,
                 LocalTpmsRepository provides container.tpmsRepository,
-                LocalPresetManager provides container.presetManager
+                LocalPresetManager provides container.presetManager,
+                LocalSsmRepository provides container.ssmRepository
             ) {
                 Dash22bTheme {
                     // A surface container using the 'background' color from the theme

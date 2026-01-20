@@ -359,7 +359,7 @@ class SsmSerialManager(private val context: Context) {
             return response
 
         } catch (e: Exception) {
-            Timber.tag(TAG).e(e, "Error reading parameters")
+            Timber.tag(TAG).e(e, "Error reading parameters $e")
             return null
         }
     }

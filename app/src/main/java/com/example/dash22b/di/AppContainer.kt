@@ -6,6 +6,7 @@ import com.example.dash22b.data.AssetLoader
 import com.example.dash22b.data.ParameterRegistry
 import com.example.dash22b.data.PresetManager
 import com.example.dash22b.data.PresetRepository
+import com.example.dash22b.data.SsmRepository
 import com.example.dash22b.data.TpmsRepository
 import com.example.dash22b.obd.SsmEcuInit
 
@@ -46,5 +47,9 @@ class AppContainer(context: Context) {
 
     val presetManager: PresetManager by lazy {
         PresetManager(presetRepository)
+    }
+
+    val ssmRepository: SsmRepository by lazy {
+        SsmRepository()
     }
 }

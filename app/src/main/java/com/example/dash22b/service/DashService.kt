@@ -14,6 +14,9 @@ import androidx.core.app.NotificationCompat
 import com.example.dash22b.DashApplication
 import com.example.dash22b.MainActivity
 import com.example.dash22b.R
+import com.example.dash22b.data.ParameterRegistry
+import com.example.dash22b.data.SsmDataSource
+import com.example.dash22b.data.SsmRepository
 import com.example.dash22b.data.TpmsDataSource
 import com.example.dash22b.data.TpmsRepository
 import com.example.dash22b.data.TpmsState
@@ -24,17 +27,24 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-class TpmsService : Service() {
+class DashService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
+
+    // TPMS
     private lateinit var tpmsDataSource: TpmsDataSource
     private lateinit var tpmsRepository: TpmsRepository
 
-    // Local mutable state
+    // SSM ECU
+    private lateinit var ssmDataSource: SsmDataSource
+    private lateinit var ssmRepository: SsmRepository
+    private lateinit var parameterRegistry: ParameterRegistry
+
+    // Local mutable state for TPMS
     private val currentTpmsMap = mutableMapOf<String, TpmsState>(
         "FL" to TpmsState(),
         "FR" to TpmsState(),
@@ -43,7 +53,7 @@ class TpmsService : Service() {
     )
 
     companion object {
-        const val CHANNEL_ID = "TpmsChannel"
+        const val CHANNEL_ID = "DashChannel"
         const val NOTIFICATION_ID = 1
         const val STALE_TIMEOUT_MS = 120_000L
         const val RESCAN_DELAY_MS = 120_000L
@@ -60,12 +70,20 @@ class TpmsService : Service() {
         createNotificationChannel()
         startForegroundService()
 
-        // Get repository from AppContainer
-        tpmsRepository = (application as DashApplication).appContainer.tpmsRepository
+        val appContainer = (application as DashApplication).appContainer
 
+        // TPMS setup
+        tpmsRepository = appContainer.tpmsRepository
         tpmsDataSource = TpmsDataSource(this)
-        startScanning()
-        startStaleChecker()
+
+        // SSM setup
+        ssmRepository = appContainer.ssmRepository
+        parameterRegistry = appContainer.parameterRegistry
+        ssmDataSource = SsmDataSource(this, parameterRegistry)
+
+        startTpmsScanning()
+        startTpmsStaleChecker()
+        startSsmPolling()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -75,7 +93,7 @@ class TpmsService : Service() {
             val broadcastIntent = Intent(ACTION_FORCE_EXIT)
             broadcastIntent.setPackage(packageName)
             sendBroadcast(broadcastIntent)
-            
+
             // Stop Service
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 stopForeground(STOP_FOREGROUND_REMOVE)
@@ -88,7 +106,27 @@ class TpmsService : Service() {
         return super.onStartCommand(intent, flags, startId)
     }
 
-    private fun startScanning() {
+    // ==================== SSM ECU ====================
+
+    private fun startSsmPolling() {
+        // Observe subscription changes from repository
+        serviceScope.launch {
+            ssmRepository.subscribedParams.collectLatest { params ->
+                ssmDataSource.subscribeToParameters(params)
+            }
+        }
+
+        // Collect engine data and push to repository
+        serviceScope.launch {
+            ssmDataSource.getEngineData().collect { engineData ->
+                ssmRepository.updateEngineData(engineData)
+            }
+        }
+    }
+
+    // ==================== TPMS ====================
+
+    private fun startTpmsScanning() {
         serviceScope.launch {
             while (isActive) {
                 Timber.d("Starting periodic BLE scan")
@@ -105,20 +143,20 @@ class TpmsService : Service() {
                 }
                 // Restart scan every 2 minutes to avoid Android "30 minutes max" throttle
                 // and other manufacturer-specific aggressive battery optimizations for background BLE
-                delay(RESCAN_DELAY_MS) 
+                delay(RESCAN_DELAY_MS)
                 scanJob.cancel()
                 Timber.d("Stopping periodic BLE scan (timeout reached)")
             }
         }
     }
-    
-    private fun startStaleChecker() {
+
+    private fun startTpmsStaleChecker() {
         serviceScope.launch {
             while (isActive) {
                 delay(5000) // Check every 5s
                 var changed = false
                 val now = System.currentTimeMillis()
-                
+
                 synchronized(currentTpmsMap) {
                     for ((key, state) in currentTpmsMap) {
                         // If it has ever received data (timestamp > 0) AND it is now old
@@ -139,6 +177,8 @@ class TpmsService : Service() {
         }
     }
 
+    // ==================== Notification ====================
+
     private fun updateNotification() {
         // Calculate min/max from non-stale data
         val activeStates = currentTpmsMap.values.filter { !it.isStale && it.timestamp > 0 }
@@ -146,10 +186,10 @@ class TpmsService : Service() {
         val contentText = if (activeStates.isNotEmpty()) {
             val min = activeStates.minOf { it.pressure.value }
             val max = activeStates.maxOf { it.pressure.value }
-            
+
             // Calculate Average RSSI
             val avgRssi = activeStates.map { it.rssi }.average().toInt()
-            
+
             String.format("%.1f-%.1f bar, Signal: %d dBm", min, max, avgRssi)
         } else {
              // If we have some data but all stale -> Signal Lost
@@ -168,19 +208,19 @@ class TpmsService : Service() {
     }
 
     private fun startForegroundService() {
-        val notification = buildNotification("Initializing TPMS Service...")
-        
+        val notification = buildNotification("Initializing...")
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
-                NOTIFICATION_ID, 
-                notification, 
+                NOTIFICATION_ID,
+                notification,
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE else 0
-            ) 
+            )
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
     }
-    
+
     private fun buildNotification(contentText: String): Notification {
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
@@ -190,7 +230,7 @@ class TpmsService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val exitIntent = Intent(this, TpmsService::class.java).apply {
+        val exitIntent = Intent(this, DashService::class.java).apply {
             action = ACTION_EXIT
         }
         val exitPendingIntent = PendingIntent.getService(
@@ -199,7 +239,7 @@ class TpmsService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("TPMS Monitor")
+            .setContentTitle("Dash Monitor")
             .setContentText(contentText)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentIntent(pendingIntent)
@@ -211,8 +251,8 @@ class TpmsService : Service() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val name = "TPMS Background Service"
-            val descriptionText = "Keeps connection to TPMS sensors"
+            val name = "Dash Background Service"
+            val descriptionText = "Keeps connection to ECU and TPMS sensors"
             val importance = NotificationManager.IMPORTANCE_LOW
             val channel = NotificationChannel(CHANNEL_ID, name, importance).apply {
                 description = descriptionText

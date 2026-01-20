@@ -146,7 +146,7 @@ class SsmDataSource(private val context: Context,
 
                     // IO errors usually mean disconnection
                     if (e is java.io.IOException) {
-                        Timber.tag(TAG).w("IO error (likely disconnected), attempting reconnect")
+                        Timber.tag(TAG).w("IO error (likely disconnected), attempting reconnect $e")
                         serialManager.disconnect()
                         consecutiveErrors = 0
 
@@ -166,7 +166,7 @@ class SsmDataSource(private val context: Context,
                             retryDelay = min(retryDelay * 2, MAX_RETRY_DELAY_MS)
                         }
                     } else {
-                        Timber.tag(TAG).e(e, "Error reading parameters")
+                        Timber.tag(TAG).e(e, "Error reading parameters $e")
                         delay(1000)
                     }
                 }
