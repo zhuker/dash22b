@@ -65,6 +65,19 @@ data class SsmPacket(
                 data = data
             )
         }
+
+        /**
+         * Converts hex string to ByteArray.
+         * Supports spaces between hex pairs.
+         */
+        fun hexToBytes(hex: String): ByteArray {
+            val cleanHex = hex.replace(" ", "")
+            val result = ByteArray(cleanHex.length / 2)
+            for (i in result.indices) {
+                result[i] = cleanHex.substring(i * 2, i * 2 + 2).toInt(16).toByte()
+            }
+            return result
+        }
     }
     
     /**

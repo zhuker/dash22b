@@ -15,7 +15,7 @@ object SsmExpressionEvaluator {
      * @param x The raw integer value from the ECU
      * @return The converted floating-point value
      */
-    fun evaluate(expression: String, x: Int): Float {
+    fun evaluate(expression: String, x: Number): Float {
         val xf = x.toFloat()
         val trimmed = expression.trim()
 
@@ -154,7 +154,8 @@ object SsmExpressionEvaluator {
         val bitCheck = Regex("""bit:(\d+)""").matchEntire(trimmed)
         if (bitCheck != null) {
             val bit = bitCheck.groups[1]!!.value.toInt()
-            return if ((x and (1 shl bit)) != 0) 1f else 0f
+            val xi = x.toInt()
+            return if ((xi and (1 shl bit)) != 0) 1f else 0f
         }
 
         // Pattern: x (identity)

@@ -31,6 +31,62 @@ class SsmDataSource(private val context: Context,
         private const val POLL_DELAY_MS = 50L  // Target ~20Hz
         private const val MAX_RETRY_DELAY_MS = 10_000L
         private const val HISTORY_SIZE = 50
+
+        /**
+         * Parses SSM response packet into EngineData.
+         * Applies conversion expressions and maps to typed fields.
+         *
+         * @param packet The SSM response packet
+         * @param parametersRead The parameters that were requested (in order)
+         */
+        fun parseResponse(
+            packet: com.example.dash22b.obd.SsmPacket,
+            parametersRead: List<com.example.dash22b.obd.SsmParameter>
+        ): EngineData? {
+            val data = packet.data
+
+            // Response format: [0xE8, value1, value2, ...]
+            // Skip first byte (0xE8 marker)
+            if (data.isEmpty() || data[0] != com.example.dash22b.obd.SsmPacket.RSP_READ_ADDRESS) {
+                Timber.tag(TAG).w("Invalid response format")
+                return null
+            }
+
+            // Fresh map for this specific response packet
+            val dynamicValues = mutableMapOf<String, ValueWithUnit>()
+            var offset = 1  // Skip 0xE8 marker
+
+            // Parse each parameter value (only the ones we requested)
+            parametersRead.forEach { param ->
+                try {
+                    if (offset + param.length > data.size) {
+                        Timber.tag(TAG).w("Not enough data for ${param.name} at offset $offset")
+                        return@forEach
+                    }
+
+                    // Parse raw value from bytes
+                    val rawValue = param.parseValue(data, offset)
+                    offset += param.length
+
+                    // Apply conversion expression
+                    val convertedValue = SsmExpressionEvaluator.evaluate(param.expression, rawValue)
+
+                    // Store with original SSM unit
+                    dynamicValues[param.name] = ValueWithUnit(convertedValue, param.unit)
+
+                } catch (e: Exception) {
+                    Timber.tag(TAG).e(e, "Error parsing ${param.name}")
+                }
+            }
+
+            // Build EngineData with current timestamp
+            val currentTimestamp = System.currentTimeMillis()
+
+            return EngineData(
+                    timestamp = currentTimestamp,
+                    values = dynamicValues
+            )
+        }
     }
 
     private val serialManager = SsmSerialManager(context)
@@ -173,59 +229,4 @@ class SsmDataSource(private val context: Context,
         }
     }.flowOn(Dispatchers.IO)
 
-    /**
-     * Parses SSM response packet into EngineData.
-     * Applies conversion expressions and maps to typed fields.
-     *
-     * @param packet The SSM response packet
-     * @param parametersRead The parameters that were requested (in order)
-     */
-    private fun parseResponse(
-        packet: com.example.dash22b.obd.SsmPacket,
-        parametersRead: List<SsmParameter>
-    ): EngineData? {
-        val data = packet.data
-
-        // Response format: [0xE8, value1, value2, ...]
-        // Skip first byte (0xE8 marker)
-        if (data.isEmpty() || data[0] != com.example.dash22b.obd.SsmPacket.RSP_READ_ADDRESS) {
-            Timber.tag(TAG).w("Invalid response format")
-            return null
-        }
-
-        // Fresh map for this specific response packet
-        val dynamicValues = mutableMapOf<String, ValueWithUnit>()
-        var offset = 1  // Skip 0xE8 marker
-
-        // Parse each parameter value (only the ones we requested)
-        parametersRead.forEach { param ->
-            try {
-                if (offset + param.length > data.size) {
-                    Timber.tag(TAG).w("Not enough data for ${param.name} at offset $offset")
-                    return@forEach
-                }
-
-                // Parse raw value from bytes
-                val rawValue = param.parseValue(data, offset)
-                offset += param.length
-
-                // Apply conversion expression
-                val convertedValue = SsmExpressionEvaluator.evaluate(param.expression, rawValue)
-
-                // Store with original SSM unit
-                dynamicValues[param.name] = ValueWithUnit(convertedValue, param.unit)
-
-            } catch (e: Exception) {
-                Timber.tag(TAG).e(e, "Error parsing ${param.name}")
-            }
-        }
-
-        // Build EngineData with current timestamp
-        val currentTimestamp = System.currentTimeMillis()
-
-        return EngineData(
-                timestamp = currentTimestamp,
-                values = dynamicValues
-        )
-    }
 }

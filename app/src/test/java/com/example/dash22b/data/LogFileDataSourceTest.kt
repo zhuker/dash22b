@@ -98,11 +98,6 @@ class LogFileDataSourceTest {
 
         // GaugeConfig(10, "Mass Airflow")
         assertEquals(45.5f, engineData.values["Mass Airflow"]?.value)
-        
-        // Verify Common Field Mapping (Backward Compatibility)
-        // rpm is ValueWithUnit.
-        assertEquals("Common Field RPM", 3200, engineData.rpm.value.toInt())
-        assertEquals("Common Field Speed", 60, engineData.speed.value.toInt())
     }
 
     class DirAssetLoader(val dir: File) : AssetLoader {

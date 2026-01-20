@@ -157,12 +157,14 @@ class SsmLoggerDefinitionParser(private val ecuInit: SsmEcuInit?) {
         // Parse first conversion
         var expression: String? = null
         var unit: DisplayUnit = DisplayUnit.UNKNOWN
+        var storageType: String? = null
         val conversionNodes = element.getElementsByTagName("conversion")
         if (conversionNodes.length > 0) {
             val conversionElement = conversionNodes.item(0) as Element
             expression = conversionElement.getAttribute("expr")
             val unitStr = conversionElement.getAttribute("units")
             unit = DisplayUnit.fromString(unitStr)
+            storageType = conversionElement.getAttribute("storagetype").takeIf { it.isNotEmpty() }
         }
 
         // Validate required fields
@@ -177,7 +179,8 @@ class SsmLoggerDefinitionParser(private val ecuInit: SsmEcuInit?) {
             address = address,
             length = length,
             expression = expression,
-            unit = unit
+            unit = unit,
+            storageType = storageType
         )
     }
 
@@ -231,12 +234,14 @@ class SsmLoggerDefinitionParser(private val ecuInit: SsmEcuInit?) {
         // Parse conversions (common to all ECUs for this parameter)
         var expression: String? = null
         var unit: DisplayUnit = DisplayUnit.UNKNOWN
+        var storageType: String? = null
         val conversionNodes = element.getElementsByTagName("conversion")
         if (conversionNodes.length > 0) {
             val conversionElement = conversionNodes.item(0) as Element
             expression = conversionElement.getAttribute("expr")
             val unitStr = conversionElement.getAttribute("units")
             unit = DisplayUnit.fromString(unitStr)
+            storageType = conversionElement.getAttribute("storagetype").takeIf { it.isNotEmpty() }
         }
 
         if (expression == null) {
@@ -249,7 +254,8 @@ class SsmLoggerDefinitionParser(private val ecuInit: SsmEcuInit?) {
             address = address,
             length = length,
             expression = expression,
-            unit = unit
+            unit = unit,
+            storageType = storageType
         )
     }
 
