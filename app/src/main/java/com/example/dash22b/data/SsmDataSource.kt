@@ -226,20 +226,12 @@ class SsmDataSource(private val context: Context,
             }
         }
 
-        val rpmValue = dynamicValues["Engine Speed"]?.value ?: 0f
-        val boostKpa = dynamicValues["Boost"]?.value ?: 101.3f
-        val boostValue = UnitConverter.convert(boostKpa - 101.3f, DisplayUnit.KPA, DisplayUnit.BAR)
-
         // Build EngineData with current timestamp
         val currentTimestamp = System.currentTimeMillis()
 
         return EngineData(
                 timestamp = currentTimestamp,
-                values = dynamicValues,
-
-                // History tracking (last 50 samples)
-                rpmHistory = (previousData.rpmHistory + rpmValue).takeLast(HISTORY_SIZE),
-                boostHistory = (previousData.boostHistory + boostValue).takeLast(HISTORY_SIZE)
+                values = dynamicValues
         )
     }
 }

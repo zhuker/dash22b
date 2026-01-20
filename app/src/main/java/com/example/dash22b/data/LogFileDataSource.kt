@@ -63,10 +63,8 @@ class LogFileDataSource(
             }
         }
 
-        // Identify critical columns for specific UI logic (Timestamp, History)
+        // Identify critical columns for specific UI logic (Timestamp)
         val timeIdx = headers.indexOfFirst { it.contains("Time", ignoreCase = true) }
-
-        var currentHistory = EngineData()
 
         var line: String? = reader.readLine()
         while (line != null) {
@@ -90,28 +88,10 @@ class LogFileDataSource(
                         ValueWithUnit(rawVal, DisplayUnit.fromString(col.logUnit))
             }
 
-            // Backward Compatibility Mapping - Populate Standard Fields with ValueWithUnit items
-            // from Map
-            // Fallback to defaults with empty unit if missing
-
-            val rpmValue = dynamicValues["RPM"]?.value ?: dynamicValues["Engine Speed"]?.value ?: 0f
-            val boostValue =
-                    dynamicValues["Boost"]?.value
-                            ?: dynamicValues["Manifold Relative Pressure"]?.value ?: 0f
-
-            val newData =
-                    EngineData(
-                            timestamp = currentTimestamp,
-                            values = dynamicValues, // The new map
-
-                            // History: Use raw values for now.
-                            // Graphs will need to handle unit conversion if needed.
-                            rpmHistory = (currentHistory.rpmHistory + rpmValue).takeLast(50),
-                            boostHistory = (currentHistory.boostHistory + boostValue).takeLast(50)
-                    )
-
-            currentHistory = newData
-            emit(newData)
+            emit(EngineData(
+                    timestamp = currentTimestamp,
+                    values = dynamicValues
+            ))
 
             line = reader.readLine()
         }

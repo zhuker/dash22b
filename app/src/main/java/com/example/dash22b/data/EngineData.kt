@@ -12,13 +12,22 @@ data class EngineData(
         // Generic Map for all diagnostic values
         val values: Map<String, ValueWithUnit> = emptyMap(),
 
-        // History (storing raw values for now)
-        val rpmHistory: List<Float> = emptyList(),
-        val boostHistory: List<Float> = emptyList(),
-
         // TPMS Data
         val tpms: Map<String, TpmsState> = emptyMap()
 )
+
+data class EngineDataHistory(
+        val snapshots: List<EngineData> = emptyList(),
+        val maxSize: Int = 50
+) {
+    fun append(data: EngineData): EngineDataHistory {
+        return copy(snapshots = (snapshots + data).takeLast(maxSize))
+    }
+
+    fun getHistory(fieldName: String): List<Float> {
+        return snapshots.mapNotNull { it.values[fieldName]?.value }
+    }
+}
 
 data class TpmsState(
         val pressure: ValueWithUnit = ValueWithUnit(0f, DisplayUnit.BAR),

@@ -85,13 +85,7 @@ class MockDataSource {
                             DisplayUnit.GRAMS_PER_SEC
                     )
 
-            currentData =
-                    currentData.copy(
-                            values = newValues,
-                            // Update history
-                            rpmHistory = (currentData.rpmHistory + rpmValue).takeLast(50),
-                            boostHistory = (currentData.boostHistory + boostValue).takeLast(50)
-                    )
+            currentData = currentData.copy(values = newValues)
 
             emit(currentData)
             delay(100) // 10Hz update

@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.example.dash22b.data.DisplayUnit
 import com.example.dash22b.data.EngineData
+import com.example.dash22b.data.EngineDataHistory
 import com.example.dash22b.data.GaugeConfig
 import com.example.dash22b.data.PresetManager.Companion.GAUGE_DISABLED_PARAM
 import com.example.dash22b.data.PresetState
@@ -72,6 +73,7 @@ fun DashboardScreen() {
     // SSM data from service via repository
     val ssmRepository = LocalSsmRepository.current
     val engineDataRaw by ssmRepository.engineData.collectAsState()
+    val history by ssmRepository.history.collectAsState()
 
     // Use Repository for TPMS data (populated by Background Service)
     val tpmsRepository = LocalTpmsRepository.current
@@ -147,7 +149,7 @@ fun DashboardScreen() {
                                         onGaugeLongClick = { id -> showDialogForId = id },
                                         onPresetClick = { showPresetSheet = true }
                                 )
-                        ScreenMode.GRAPHS -> GraphsContent(engineData)
+                        ScreenMode.GRAPHS -> GraphsContent(engineData, history)
                         ScreenMode.OTHER -> OtherContent(engineData)
                     }
                 }
@@ -184,7 +186,7 @@ fun DashboardScreen() {
                                         onGaugeLongClick = { id -> showDialogForId = id },
                                         onPresetClick = { showPresetSheet = true }
                                 )
-                        ScreenMode.GRAPHS -> GraphsContent(engineData)
+                        ScreenMode.GRAPHS -> GraphsContent(engineData, history)
                         ScreenMode.OTHER -> OtherContent(engineData)
                     }
 
@@ -561,11 +563,11 @@ fun GaugesContent(
 }
 
 @Composable
-fun GraphsContent(data: EngineData) {
+fun GraphsContent(data: EngineData, history: EngineDataHistory) {
     // A grid of graphs
     // Helper to convert history
-    fun convertHist(history: List<Float>, fromUnit: DisplayUnit, toUnit: DisplayUnit): List<Float> {
-        return history.map { UnitConverter.convert(it, fromUnit, toUnit) }
+    fun convertHist(historyList: List<Float>, fromUnit: DisplayUnit, toUnit: DisplayUnit): List<Float> {
+        return historyList.map { UnitConverter.convert(it, fromUnit, toUnit) }
     }
 
     fun convertVal(value: Float, fromUnit: DisplayUnit, toUnit: DisplayUnit): Float {
@@ -576,7 +578,7 @@ fun GraphsContent(data: EngineData) {
         // Row 1
         Row(modifier = Modifier.weight(1f)) {
             LineGraph(
-                    dataPoints = data.rpmHistory, // RPM usually needs no conversion
+                    dataPoints = history.getHistory("Engine Speed"),
                     label = "RPM",
                     unit = DisplayUnit.RPM,
                     currentValue = data.values["Engine Speed"]?.value
@@ -585,7 +587,7 @@ fun GraphsContent(data: EngineData) {
                     modifier = Modifier.weight(1f).padding(4.dp)
             )
             LineGraph(
-                    dataPoints = listOf(), // Spark Advance History TBD
+                    dataPoints = history.getHistory("Ignition Timing"),
                     label = "Spark Adv",
                     unit = DisplayUnit.DEGREES,
                     currentValue = data.values["Ignition Timing"]?.value ?: 0f,
@@ -597,7 +599,7 @@ fun GraphsContent(data: EngineData) {
                             ?: data.values["Coolant Temperature"]
                                     ?: com.example.dash22b.data.ValueWithUnit(0f, DisplayUnit.C)
             LineGraph(
-                    dataPoints = listOf(), // Coolant History TBD
+                    dataPoints = history.getHistory("Coolant Temp").ifEmpty { history.getHistory("Coolant Temperature") },
                     label = "Coolant",
                     unit = DisplayUnit.C,
                     currentValue = convertVal(coolantVal.value, coolantVal.unit, DisplayUnit.C),
@@ -612,7 +614,7 @@ fun GraphsContent(data: EngineData) {
                     data.values["Boost"]
                             ?: com.example.dash22b.data.ValueWithUnit(0f, DisplayUnit.BAR)
             LineGraph(
-                    dataPoints = convertHist(data.boostHistory, boostVal.unit, boostUnit),
+                    dataPoints = convertHist(history.getHistory("Boost"), boostVal.unit, boostUnit),
                     label = "Boost",
                     unit = boostUnit,
                     currentValue = convertVal(boostVal.value, boostVal.unit, boostUnit),
@@ -620,7 +622,7 @@ fun GraphsContent(data: EngineData) {
                     modifier = Modifier.weight(1f).padding(4.dp)
             )
             LineGraph(
-                    dataPoints = listOf(), // AFR History TBD
+                    dataPoints = history.getHistory("AFR"),
                     label = "AFR",
                     unit = DisplayUnit.AFR,
                     currentValue = data.values["AFR"]?.value ?: 0f,
@@ -632,7 +634,7 @@ fun GraphsContent(data: EngineData) {
                             ?: data.values["Intake Temp"]
                                     ?: com.example.dash22b.data.ValueWithUnit(0f, DisplayUnit.C)
             LineGraph(
-                    dataPoints = listOf(), // IAT History TBD
+                    dataPoints = history.getHistory("Intake Air Temp").ifEmpty { history.getHistory("Intake Temp") },
                     label = "IAT",
                     unit = DisplayUnit.C,
                     currentValue = convertVal(iatVal.value, iatVal.unit, DisplayUnit.C),
@@ -643,7 +645,7 @@ fun GraphsContent(data: EngineData) {
         // Row 3
         Row(modifier = Modifier.weight(1f)) {
             LineGraph(
-                    dataPoints = listOf(), // Pulse History TBD
+                    dataPoints = history.getHistory("Inj Pulse Width"),
                     label = "Pulse Width",
                     unit = DisplayUnit.MILLISECONDS,
                     currentValue = data.values["Inj Pulse Width"]?.value ?: 0f,
@@ -651,7 +653,7 @@ fun GraphsContent(data: EngineData) {
                     modifier = Modifier.weight(1f).padding(4.dp)
             )
             LineGraph(
-                    dataPoints = listOf(), // Duty History TBD
+                    dataPoints = history.getHistory("Inj Duty Cycle").ifEmpty { history.getHistory("Injector Duty Cycle") },
                     label = "Duty Cycle",
                     unit = DisplayUnit.PERCENT,
                     currentValue = data.values["Inj Duty Cycle"]?.value
@@ -660,7 +662,7 @@ fun GraphsContent(data: EngineData) {
                     modifier = Modifier.weight(1f).padding(4.dp)
             )
             LineGraph(
-                    dataPoints = listOf(), // MAF History TBD
+                    dataPoints = history.getHistory("Mass Airflow").ifEmpty { history.getHistory("Mass Air Flow") },
                     label = "MAF",
                     unit = DisplayUnit.GRAMS_PER_SEC,
                     currentValue = data.values["Mass Airflow"]?.value
