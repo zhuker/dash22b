@@ -149,7 +149,7 @@ fun DashboardScreen() {
                                         onGaugeLongClick = { id -> showDialogForId = id },
                                         onPresetClick = { showPresetSheet = true }
                                 )
-                        ScreenMode.GRAPHS -> GraphsContent(engineData, history)
+                        ScreenMode.GRAPHS -> GraphsContent(engineData, history, gaugeConfigs)
                         ScreenMode.OTHER -> OtherContent(engineData)
                     }
                 }
@@ -186,7 +186,7 @@ fun DashboardScreen() {
                                         onGaugeLongClick = { id -> showDialogForId = id },
                                         onPresetClick = { showPresetSheet = true }
                                 )
-                        ScreenMode.GRAPHS -> GraphsContent(engineData, history)
+                        ScreenMode.GRAPHS -> GraphsContent(engineData, history, gaugeConfigs)
                         ScreenMode.OTHER -> OtherContent(engineData)
                     }
 
@@ -563,113 +563,93 @@ fun GaugesContent(
 }
 
 @Composable
-fun GraphsContent(data: EngineData, history: EngineDataHistory) {
-    // A grid of graphs
-    // Helper to convert history
-    fun convertHist(historyList: List<Float>, fromUnit: DisplayUnit, toUnit: DisplayUnit): List<Float> {
-        return historyList.map { UnitConverter.convert(it, fromUnit, toUnit) }
+fun DynamicLineGraph(
+        config: GaugeConfig,
+        data: EngineData,
+        history: EngineDataHistory,
+        color: Color,
+        modifier: Modifier = Modifier
+) {
+    val parameterRegistry = LocalParameterRegistry.current
+
+    // Handle disabled gauge - show placeholder graph
+    if (config.parameterName == GAUGE_DISABLED_PARAM) {
+        LineGraph(
+                dataPoints = emptyList(),
+                label = "—",
+                unit = DisplayUnit.UNKNOWN,
+                currentValue = 0f,
+                color = Color.DarkGray,
+                modifier = modifier
+        )
+        return
     }
 
-    fun convertVal(value: Float, fromUnit: DisplayUnit, toUnit: DisplayUnit): Float {
-        return UnitConverter.convert(value, fromUnit, toUnit)
+    // Look up definition (same pattern as DynamicCircularGauge)
+    var key = config.parameterName
+    val def = parameterRegistry.getDefinition(key)
+    key = def?.name ?: key
+
+    // Get current value with unit
+    val vwu = data.values[key]
+            ?: com.example.dash22b.data.ValueWithUnit(0f, DisplayUnit.UNKNOWN)
+
+    // Determine target unit (config override → definition default → data unit)
+    val targetUnit = config.getDisplayUnit() ?: def?.unit ?: vwu.unit
+
+    // Get history and convert units if needed
+    val rawHistory = history.getHistory(key)
+    val convertedHistory = if (vwu.unit != targetUnit && rawHistory.isNotEmpty()) {
+        rawHistory.map { UnitConverter.convert(it, vwu.unit, targetUnit) }
+    } else {
+        rawHistory
     }
+
+    // Convert current value
+    val displayValue = UnitConverter.convert(vwu.value, vwu.unit, targetUnit)
+
+    // Use parameter name as label
+    val label_ = def?.name ?: key
+    val label = label_.split(" ").firstOrNull() ?: label_
+
+    LineGraph(
+            dataPoints = convertedHistory,
+            label = label,
+            unit = targetUnit,
+            currentValue = displayValue,
+            color = color,
+            modifier = modifier
+    )
+}
+
+@Composable
+fun GraphsContent(
+        data: EngineData,
+        history: EngineDataHistory,
+        gaugeConfigs: List<GaugeConfig>
+) {
+    // Graph colors cycle by column: Green, Teal, Orange
+    val colors = listOf(GaugeGreen, GaugeTeal, GaugeOrange)
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Row 1
-        Row(modifier = Modifier.weight(1f)) {
-            LineGraph(
-                    dataPoints = history.getHistory("Engine Speed"),
-                    label = "RPM",
-                    unit = DisplayUnit.RPM,
-                    currentValue = data.values["Engine Speed"]?.value
-                                    ?: data.values["RPM"]?.value ?: 0f,
-                    color = GaugeGreen,
-                    modifier = Modifier.weight(1f).padding(4.dp)
-            )
-            LineGraph(
-                    dataPoints = history.getHistory("Ignition Timing"),
-                    label = "Spark Adv",
-                    unit = DisplayUnit.DEGREES,
-                    currentValue = data.values["Ignition Timing"]?.value ?: 0f,
-                    color = GaugeTeal,
-                    modifier = Modifier.weight(1f).padding(4.dp)
-            )
-            val coolantVal =
-                    data.values["Coolant Temp"]
-                            ?: data.values["Coolant Temperature"]
-                                    ?: com.example.dash22b.data.ValueWithUnit(0f, DisplayUnit.C)
-            LineGraph(
-                    dataPoints = history.getHistory("Coolant Temp").ifEmpty { history.getHistory("Coolant Temperature") },
-                    label = "Coolant",
-                    unit = DisplayUnit.C,
-                    currentValue = convertVal(coolantVal.value, coolantVal.unit, DisplayUnit.C),
-                    color = GaugeOrange,
-                    modifier = Modifier.weight(1f).padding(4.dp)
-            )
-        }
-        // Row 2
-        Row(modifier = Modifier.weight(1f)) {
-            val boostUnit = DisplayUnit.BAR
-            val boostVal =
-                    data.values["Boost"]
-                            ?: com.example.dash22b.data.ValueWithUnit(0f, DisplayUnit.BAR)
-            LineGraph(
-                    dataPoints = convertHist(history.getHistory("Boost"), boostVal.unit, boostUnit),
-                    label = "Boost",
-                    unit = boostUnit,
-                    currentValue = convertVal(boostVal.value, boostVal.unit, boostUnit),
-                    color = GaugeGreen,
-                    modifier = Modifier.weight(1f).padding(4.dp)
-            )
-            LineGraph(
-                    dataPoints = history.getHistory("AFR"),
-                    label = "AFR",
-                    unit = DisplayUnit.AFR,
-                    currentValue = data.values["AFR"]?.value ?: 0f,
-                    color = GaugeTeal,
-                    modifier = Modifier.weight(1f).padding(4.dp)
-            )
-            val iatVal =
-                    data.values["Intake Air Temp"]
-                            ?: data.values["Intake Temp"]
-                                    ?: com.example.dash22b.data.ValueWithUnit(0f, DisplayUnit.C)
-            LineGraph(
-                    dataPoints = history.getHistory("Intake Air Temp").ifEmpty { history.getHistory("Intake Temp") },
-                    label = "IAT",
-                    unit = DisplayUnit.C,
-                    currentValue = convertVal(iatVal.value, iatVal.unit, DisplayUnit.C),
-                    color = GaugeOrange,
-                    modifier = Modifier.weight(1f).padding(4.dp)
-            )
-        }
-        // Row 3
-        Row(modifier = Modifier.weight(1f)) {
-            LineGraph(
-                    dataPoints = history.getHistory("Inj Pulse Width"),
-                    label = "Pulse Width",
-                    unit = DisplayUnit.MILLISECONDS,
-                    currentValue = data.values["Inj Pulse Width"]?.value ?: 0f,
-                    color = GaugeGreen,
-                    modifier = Modifier.weight(1f).padding(4.dp)
-            )
-            LineGraph(
-                    dataPoints = history.getHistory("Inj Duty Cycle").ifEmpty { history.getHistory("Injector Duty Cycle") },
-                    label = "Duty Cycle",
-                    unit = DisplayUnit.PERCENT,
-                    currentValue = data.values["Inj Duty Cycle"]?.value
-                                    ?: data.values["Injector Duty Cycle"]?.value ?: 0f,
-                    color = GaugeTeal,
-                    modifier = Modifier.weight(1f).padding(4.dp)
-            )
-            LineGraph(
-                    dataPoints = history.getHistory("Mass Airflow").ifEmpty { history.getHistory("Mass Air Flow") },
-                    label = "MAF",
-                    unit = DisplayUnit.GRAMS_PER_SEC,
-                    currentValue = data.values["Mass Airflow"]?.value
-                                    ?: data.values["Mass Air Flow"]?.value ?: 0f,
-                    color = GaugeOrange,
-                    modifier = Modifier.weight(1f).padding(4.dp)
-            )
+        // IDs 2-10 map to 9 graphs in 3x3 grid
+        val graphIds = (2..10).toList().chunked(3)
+
+        graphIds.forEach { rowIds ->
+            Row(modifier = Modifier.weight(1f)) {
+                rowIds.forEachIndexed { columnIndex, gaugeId ->
+                    val config = gaugeConfigs.find { it.id == gaugeId }
+                            ?: GaugeConfig(gaugeId, "Unknown")
+
+                    DynamicLineGraph(
+                            config = config,
+                            data = data,
+                            history = history,
+                            color = colors[columnIndex],
+                            modifier = Modifier.weight(1f).padding(4.dp)
+                    )
+                }
+            }
         }
     }
 }
