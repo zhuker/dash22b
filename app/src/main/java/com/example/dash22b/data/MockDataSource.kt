@@ -1,45 +1,98 @@
 package com.example.dash22b.data
 
+import kotlin.random.Random
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import kotlin.random.Random
 
 class MockDataSource {
-    
+
     // Simulate data stream
     fun getEngineData(): Flow<EngineData> = flow {
         var currentData = EngineData()
-        
-        while (true) {
-            // Helper to update value
-            fun update(current: ValueWithUnit, delta: Float, min: Float, max: Float): ValueWithUnit {
-                val newValue = (current.value + delta).coerceIn(min, max)
-                return current.copy(value = newValue)
-            }
-            
-            // Simulate random variations
-            val newRpm = update(currentData.rpm, Random.nextInt(-100, 100).toFloat(), 800f, 7000f)
-            val newBoost = update(currentData.boost, Random.nextFloat() * 0.1f - 0.05f, 0f, 2.0f)
 
-            currentData = currentData.copy(
-                rpm = newRpm,
-                boost = newBoost,
-                batteryVoltage = update(currentData.batteryVoltage, Random.nextFloat() * 0.1f - 0.05f, 12.0f, 14.5f),
-                pulseWidth = update(currentData.pulseWidth, Random.nextFloat() * 0.5f - 0.25f, 0f, 20f),
-                coolantTemp = update(currentData.coolantTemp, Random.nextInt(-1, 2).toFloat(), 70f, 110f),
-                sparkLines = update(currentData.sparkLines, Random.nextFloat() * 0.5f - 0.25f, 10f, 40f),
-                dutyCycle = update(currentData.dutyCycle, Random.nextFloat() * 1f - 0.5f, 0f, 100f),
-                speed = update(currentData.speed, Random.nextInt(-2, 3).toFloat(), 0f, 240f),
-                iat = update(currentData.iat, Random.nextInt(-1, 2).toFloat(), 20f, 60f),
-                afr = update(currentData.afr, Random.nextFloat() * 0.1f - 0.05f, 10f, 20f),
-                maf = update(currentData.maf, Random.nextFloat() * 1f - 0.5f, 0f, 100f),
-                
-                // Update history
-                rpmHistory = (currentData.rpmHistory + newRpm.value).takeLast(50),
-                boostHistory = (currentData.boostHistory + newBoost.value).takeLast(50)
-            )
-            
+        while (true) {
+            // Simulate random variations
+            val rpmVal =
+                    (currentData.values["Engine Speed"]?.value
+                            ?: 800f) + Random.nextInt(-100, 100).toFloat()
+            val rpmValue = rpmVal.coerceIn(800f, 7000f)
+
+            val boostVal =
+                    (currentData.values["Boost"]?.value ?: 0f) + (Random.nextFloat() * 0.1f - 0.05f)
+            val boostValue = boostVal.coerceIn(0f, 2.0f)
+
+            val newValues = currentData.values.toMutableMap()
+            newValues["Engine Speed"] = ValueWithUnit(rpmValue, DisplayUnit.RPM)
+            newValues["Boost"] = ValueWithUnit(boostValue, DisplayUnit.BAR)
+            newValues["Battery Voltage"] =
+                    ValueWithUnit(
+                            ((currentData.values["Battery Voltage"]?.value
+                                            ?: 13.5f) + (Random.nextFloat() * 0.1f - 0.05f))
+                                    .coerceIn(12.0f, 14.5f),
+                            DisplayUnit.VOLTS
+                    )
+            newValues["Coolant Temp"] =
+                    ValueWithUnit(
+                            ((currentData.values["Coolant Temp"]?.value
+                                            ?: 90f) + Random.nextInt(-1, 2).toFloat()).coerceIn(
+                                    70f,
+                                    110f
+                            ),
+                            DisplayUnit.F
+                    )
+            newValues["Ignition Timing"] =
+                    ValueWithUnit(
+                            ((currentData.values["Ignition Timing"]?.value
+                                            ?: 20f) + (Random.nextFloat() * 0.5f - 0.25f)).coerceIn(
+                                    10f,
+                                    40f
+                            ),
+                            DisplayUnit.DEGREES
+                    )
+            newValues["Vehicle Speed"] =
+                    ValueWithUnit(
+                            ((currentData.values["Vehicle Speed"]?.value
+                                            ?: 0f) + Random.nextInt(-2, 3).toFloat()).coerceIn(
+                                    0f,
+                                    240f
+                            ),
+                            DisplayUnit.KMH
+                    )
+            newValues["Intake Air Temp"] =
+                    ValueWithUnit(
+                            ((currentData.values["Intake Air Temp"]?.value
+                                            ?: 40f) + Random.nextInt(-1, 2).toFloat()).coerceIn(
+                                    20f,
+                                    60f
+                            ),
+                            DisplayUnit.F
+                    )
+            newValues["AFR"] =
+                    ValueWithUnit(
+                            ((currentData.values["AFR"]?.value
+                                            ?: 14.7f) + (Random.nextFloat() * 0.1f - 0.05f))
+                                    .coerceIn(10f, 20f),
+                            DisplayUnit.AFR
+                    )
+            newValues["Mass Airflow"] =
+                    ValueWithUnit(
+                            ((currentData.values["Mass Airflow"]?.value
+                                            ?: 5f) + (Random.nextFloat() * 1f - 0.5f)).coerceIn(
+                                    0f,
+                                    100f
+                            ),
+                            DisplayUnit.GRAMS_PER_SEC
+                    )
+
+            currentData =
+                    currentData.copy(
+                            values = newValues,
+                            // Update history
+                            rpmHistory = (currentData.rpmHistory + rpmValue).takeLast(50),
+                            boostHistory = (currentData.boostHistory + boostValue).takeLast(50)
+                    )
+
             emit(currentData)
             delay(100) // 10Hz update
         }
