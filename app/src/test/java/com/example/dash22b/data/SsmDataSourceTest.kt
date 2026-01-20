@@ -1,5 +1,6 @@
 package com.example.dash22b.data
 
+import com.example.dash22b.TestHelper
 import com.example.dash22b.obd.SsmEcuInit
 import com.example.dash22b.obd.SsmLoggerDefinitionParser
 import com.example.dash22b.obd.SsmPacket
@@ -23,17 +24,7 @@ class SsmDataSourceTest {
         val packet = SsmPacket.fromBytes(SsmPacket.hexToBytes(responseHex))
         assertNotNull("Failed to parse SSM packet from hex dump", packet)
 
-        // Load parameters from XML like in SsmExpressionEvaluatorTest
-        val xmlFile = File("src/main/assets/logger_METRIC_EN_v370.xml")
-        if (!xmlFile.exists()) {
-            println("XML file not found, skipping test. Current dir: ${File(".").absolutePath}")
-            return
-        }
-
-        val ecuInit = SsmEcuInit.createHardcoded()
-        val allParams = xmlFile.inputStream().use { inputStream ->
-            SsmLoggerDefinitionParser.parseParameters(inputStream, ecuInit, 1)
-        }
+        val allParams = TestHelper.stiParams()
 
         // The parameters requested in the hex dump in order:
         // A/F Correction #1, A/F Learning #1, A/F Sensor #1, Boost Error*, Engine Speed, Manifold Relative Pressure

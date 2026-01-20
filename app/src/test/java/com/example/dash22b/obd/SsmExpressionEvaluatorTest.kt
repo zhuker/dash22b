@@ -1,5 +1,6 @@
 package com.example.dash22b.obd
 
+import com.example.dash22b.TestHelper
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -11,20 +12,7 @@ class SsmExpressionEvaluatorTest {
 
     @Test
     fun testAll() {
-
-        val xmlFile = File("src/main/assets/logger_METRIC_EN_v370.xml")
-        if (!xmlFile.exists()) {
-            println("XML file not found, skipping test")
-            return
-        }
-
-        val ecuInit = SsmEcuInit.createHardcoded()
-        println("Listing ALL supported parameters for ROM ID: ${ecuInit.getRomId()}")
-
-        val parameters =
-                xmlFile.inputStream().use { inputStream ->
-                    SsmLoggerDefinitionParser.parseParameters(inputStream, ecuInit, 1)
-                }
+        val parameters = TestHelper.stiParams()
         assertTrue(!parameters.isEmpty())
         parameters.distinctBy { it.expression }.forEach {
             print("testing ${it.name} x=10 ${it.expression} ")

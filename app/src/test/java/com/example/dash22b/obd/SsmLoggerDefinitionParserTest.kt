@@ -1,6 +1,7 @@
 package com.example.dash22b.obd
 
 import android.util.Log
+import com.example.dash22b.TestHelper
 import com.example.dash22b.data.DisplayUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -70,71 +71,55 @@ class SsmLoggerDefinitionParserTest {
      */
     @Test
     fun testParseAllParameters() {
-        val xmlFile = File("src/main/assets/logger_METRIC_EN_v370.xml")
-        if (!xmlFile.exists()) {
-            println("XML file not found at: ${xmlFile.absolutePath}")
-            println("Skipping test - XML file required")
-            return
-        }
-
-        // Create hardcoded ECU init with all capabilities enabled
-        val ecuInit = SsmEcuInit.createHardcoded()
-
         println("=".repeat(80))
         println("SSM Logger Definition Parser Test")
         println("ROM ID: $testRomId (hardcoded for testing)")
         println("=".repeat(80))
 
-        xmlFile.inputStream().use { inputStream ->
-            val parameters = SsmLoggerDefinitionParser.parseParameters(
-                inputStream = inputStream,
-                ecuInit = ecuInit,
-                target = 1 // ECU only
-            )
+        val parameters = TestHelper.stiParams()
 
-            println("\nParsed ${parameters.size} parameters:\n")
+        println("\nParsed ${parameters.size} parameters:\n")
+        println(
+            String.format(
+                "%-6s %-40s %-10s %-6s %-20s %s",
+                "ID", "Name", "Address", "Len", "Unit", "Expression"
+            )
+        )
+        println("-".repeat(100))
+
+        parameters.sortedBy { it.id }.forEach { param ->
             println(
                 String.format(
-                    "%-6s %-40s %-10s %-6s %-20s %s",
-                    "ID", "Name", "Address", "Len", "Unit", "Expression"
+                    "%-6s %-40s 0x%06X %-6d %-20s %s",
+                    param.id,
+                    param.name.take(40),
+                    param.address,
+                    param.length,
+                    param.unit.displayName(),
+                    param.expression
                 )
             )
-            println("-".repeat(100))
-
-            parameters.sortedBy { it.id }.forEach { param ->
-                println(
-                    String.format(
-                        "%-6s %-40s 0x%06X %-6d %-20s %s",
-                        param.id,
-                        param.name.take(40),
-                        param.address,
-                        param.length,
-                        param.unit.displayName(),
-                        param.expression
-                    )
-                )
-            }
-
-            println("\n" + "=".repeat(80))
-            println("Total: ${parameters.size} parameters")
-            println("=".repeat(80))
-
-            // Basic assertions
-            assertTrue("Should parse some parameters", parameters.isNotEmpty())
-
-            // Check for known critical parameters
-            val engineSpeed = parameters.find { it.id == "P8" }
-            assertNotNull("Should have Engine Speed (P8)", engineSpeed)
-            assertEquals("Engine Speed", engineSpeed?.name)
-            assertEquals(0x00000E, engineSpeed?.address)
-            assertEquals(2, engineSpeed?.length)
-            assertEquals("x/4", engineSpeed?.expression)
-
-            val coolantTemp = parameters.find { it.id == "P2" }
-            assertNotNull("Should have Coolant Temperature (P2)", coolantTemp)
-            assertEquals(0x000008, coolantTemp?.address)
-            assertEquals("x-40", coolantTemp?.expression)
         }
+
+        println("\n" + "=".repeat(80))
+        println("Total: ${parameters.size} parameters")
+        println("=".repeat(80))
+
+        // Basic assertions
+        assertTrue("Should parse some parameters", parameters.isNotEmpty())
+
+        // Check for known critical parameters
+        val engineSpeed = parameters.find { it.id == "P8" }
+        assertNotNull("Should have Engine Speed (P8)", engineSpeed)
+        assertEquals("Engine Speed", engineSpeed?.name)
+        assertEquals(0x00000E, engineSpeed?.address)
+        assertEquals(2, engineSpeed?.length)
+        assertEquals("x/4", engineSpeed?.expression)
+
+        val coolantTemp = parameters.find { it.id == "P2" }
+        assertNotNull("Should have Coolant Temperature (P2)", coolantTemp)
+        assertEquals(0x000008, coolantTemp?.address)
+        assertEquals("x-40", coolantTemp?.expression)
     }
 
     /**
@@ -142,30 +127,18 @@ class SsmLoggerDefinitionParserTest {
      */
     @Test
     fun testParseWithoutEcuInit() {
-        val xmlFile = File("src/main/assets/logger_METRIC_EN_v370.xml")
-        if (!xmlFile.exists()) {
-            println("XML file not found, skipping test")
-            return
-        }
+        val parameters = TestHelper.stiParams()
 
-        xmlFile.inputStream().use { inputStream ->
-            val parameters = SsmLoggerDefinitionParser.parseParameters(
-                inputStream = inputStream,
-                ecuInit = null, // No filtering
-                target = 1
-            )
+        println("\n" + "=".repeat(80))
+        println("Parsed ${parameters.size} parameters WITHOUT capability filtering")
+        println("=".repeat(80))
 
-            println("\n" + "=".repeat(80))
-            println("Parsed ${parameters.size} parameters WITHOUT capability filtering")
-            println("=".repeat(80))
+        // Check if P3-P9 are present
+        val p3to9 =
+            parameters.filter { it.id in listOf("P3", "P4", "P5", "P6", "P7", "P8", "P9") }
+        println("Parameters P3-P9 found: ${p3to9.map { it.id }}")
 
-            // Check if P3-P9 are present
-            val p3to9 =
-                parameters.filter { it.id in listOf("P3", "P4", "P5", "P6", "P7", "P8", "P9") }
-            println("Parameters P3-P9 found: ${p3to9.map { it.id }}")
-
-            assertTrue("Should parse parameters", parameters.isNotEmpty())
-        }
+        assertTrue("Should parse parameters", parameters.isNotEmpty())
     }
 
     /**
@@ -173,48 +146,38 @@ class SsmLoggerDefinitionParserTest {
      */
     @Test
     fun testKnownParameters() {
-        val xmlFile = File("src/main/assets/logger_METRIC_EN_v370.xml")
-        if (!xmlFile.exists()) {
-            println("XML file not found, skipping test")
-            return
+        val parameters = TestHelper.stiParams()
+        val paramMap = parameters.associateBy { it.id }
+        paramMap.forEach {
+            println(it)
         }
 
-        val ecuInit = SsmEcuInit.createHardcoded()
+        // Verify parameters match SsmHardcodedParameters values
+        println("\nComparing with SsmHardcodedParameters:")
+        println("-".repeat(60))
 
-        xmlFile.inputStream().use { inputStream ->
-            val parameters = SsmLoggerDefinitionParser.parseParameters(inputStream, ecuInit, 1)
-            val paramMap = parameters.associateBy { it.id }
-            paramMap.forEach {
-                println(it)
-            }
+        SsmHardcodedParameters.parameters.forEach { hardcoded ->
+            val parsed = paramMap[hardcoded.id]
+            if (parsed != null) {
+                println("✓ ${hardcoded.id}: ${hardcoded.name}")
+                println(
+                    "  Address: hardcoded=0x${hardcoded.address.toString(16).uppercase()}, " +
+                            "parsed=0x${parsed.address.toString(16).uppercase()}"
+                )
+                println("  Length: hardcoded=${hardcoded.length}, parsed=${parsed.length}")
+                println("  Expression: hardcoded=${hardcoded.expression}, parsed=${parsed.expression}")
 
-            // Verify parameters match SsmHardcodedParameters values
-            println("\nComparing with SsmHardcodedParameters:")
-            println("-".repeat(60))
-
-            SsmHardcodedParameters.parameters.forEach { hardcoded ->
-                val parsed = paramMap[hardcoded.id]
-                if (parsed != null) {
-                    println("✓ ${hardcoded.id}: ${hardcoded.name}")
-                    println(
-                        "  Address: hardcoded=0x${hardcoded.address.toString(16).uppercase()}, " +
-                                "parsed=0x${parsed.address.toString(16).uppercase()}"
-                    )
-                    println("  Length: hardcoded=${hardcoded.length}, parsed=${parsed.length}")
-                    println("  Expression: hardcoded=${hardcoded.expression}, parsed=${parsed.expression}")
-
-                    // These should match
-                    assertEquals(
-                        "Address mismatch for ${hardcoded.id}",
-                        hardcoded.address, parsed.address
-                    )
-                    assertEquals(
-                        "Length mismatch for ${hardcoded.id}",
-                        hardcoded.length, parsed.length
-                    )
-                } else {
-                    println("✗ ${hardcoded.id}: ${hardcoded.name} - NOT FOUND in parsed parameters")
-                }
+                // These should match
+                assertEquals(
+                    "Address mismatch for ${hardcoded.id}",
+                    hardcoded.address, parsed.address
+                )
+                assertEquals(
+                    "Length mismatch for ${hardcoded.id}",
+                    hardcoded.length, parsed.length
+                )
+            } else {
+                println("✗ ${hardcoded.id}: ${hardcoded.name} - NOT FOUND in parsed parameters")
             }
         }
     }
@@ -224,35 +187,25 @@ class SsmLoggerDefinitionParserTest {
      */
     @Test
     fun testPrintParametersForComparison() {
-        val xmlFile = File("src/main/assets/logger_METRIC_EN_v370.xml")
-        if (!xmlFile.exists()) {
-            println("XML file not found, skipping test")
-            return
+        val parameters = TestHelper.stiParams()
+
+        println("\n" + "=".repeat(80))
+        println("PARAMETERS FOR ROM ID: $testRomId")
+        println("Format: ID | Name | Address | Unit")
+        println("Use this list to compare with RomRaider or other SSM tools")
+        println("=".repeat(80) + "\n")
+
+        parameters.sortedBy { it.id }.forEach { param ->
+            println(
+                "${param.id} | ${param.name} | 0x${
+                    param.address.toString(16).uppercase().padStart(6, '0')
+                } | ${param.unit.displayName()}"
+            )
         }
 
-        val ecuInit = SsmEcuInit.createHardcoded()
-
-        xmlFile.inputStream().use { inputStream ->
-            val parameters = SsmLoggerDefinitionParser.parseParameters(inputStream, ecuInit, 1)
-
-            println("\n" + "=".repeat(80))
-            println("PARAMETERS FOR ROM ID: $testRomId")
-            println("Format: ID | Name | Address | Unit")
-            println("Use this list to compare with RomRaider or other SSM tools")
-            println("=".repeat(80) + "\n")
-
-            parameters.sortedBy { it.id }.forEach { param ->
-                println(
-                    "${param.id} | ${param.name} | 0x${
-                        param.address.toString(16).uppercase().padStart(6, '0')
-                    } | ${param.unit.displayName()}"
-                )
-            }
-
-            println("\n" + "=".repeat(80))
-            println("Total parameters: ${parameters.size}")
-            println("=".repeat(80))
-        }
+        println("\n" + "=".repeat(80))
+        println("Total parameters: ${parameters.size}")
+        println("=".repeat(80))
     }
 
     /**
@@ -260,38 +213,25 @@ class SsmLoggerDefinitionParserTest {
      */
     @Test
     fun testEcuParams() {
-        val xmlFile = File("src/main/assets/logger_METRIC_EN_v370.xml")
-        if (!xmlFile.exists()) {
-            println("XML file not found, skipping test")
-            return
+
+        val parameters = TestHelper.stiParams()
+
+        val ecuParams = parameters.filter { it.id.startsWith("E") }
+        println("Found ${ecuParams.size} ECU-specific parameters (E*)")
+
+        ecuParams.sortedBy { it.id }.forEach {
+            println("  ${it.id}: ${it.name} @ 0x${it.address.toString(16).uppercase()}")
         }
 
-        // Use the hardcoded init which contains the real 2005 STi response
-        // With the fix, this should now resolve to ROM ID 3D12594006
-        val ecuInit = SsmEcuInit.createHardcoded()
+        assertTrue(
+            "Should find some ECU-specific parameters for this ROM",
+            ecuParams.isNotEmpty()
+        )
 
-        println("Testing ECU params for ROM ID: ${ecuInit.getRomId()}")
-
-        xmlFile.inputStream().use { inputStream ->
-            val parameters = SsmLoggerDefinitionParser.parseParameters(inputStream, ecuInit, 1)
-
-            val ecuParams = parameters.filter { it.id.startsWith("E") }
-            println("Found ${ecuParams.size} ECU-specific parameters (E*)")
-
-            ecuParams.sortedBy { it.id }.forEach {
-                println("  ${it.id}: ${it.name} @ 0x${it.address.toString(16).uppercase()}")
-            }
-
-            assertTrue(
-                "Should find some ECU-specific parameters for this ROM",
-                ecuParams.isNotEmpty()
-            )
-
-            // Basic validity checks
-            ecuParams.forEach {
-                assertNotNull("Address should be present", it.address)
-                assertTrue("Address should be positive", it.address > 0)
-            }
+        // Basic validity checks
+        ecuParams.forEach {
+            assertNotNull("Address should be present", it.address)
+            assertTrue("Address should be positive", it.address > 0)
         }
     }
 
@@ -304,18 +244,7 @@ class SsmLoggerDefinitionParserTest {
                     .toMap()
             }
 
-        val xmlFile = File("src/main/assets/logger_METRIC_EN_v370.xml")
-        if (!xmlFile.exists()) {
-            println("XML file not found, skipping test")
-            return
-        }
-
-        val ecuInit = SsmEcuInit.createHardcoded()
-        println("Listing ALL supported parameters for ROM ID: ${ecuInit.getRomId()}")
-
-        val parameters = xmlFile.inputStream().use { inputStream ->
-            SsmLoggerDefinitionParser.parseParameters(inputStream, ecuInit, 1)
-        }
+        val parameters = TestHelper.stiParams()
         assertTrue(!parameters.isEmpty())
         val p56 = parameters.firstOrNull { it.id == "P56" } // A/F Sensor #1 Resistance
         assertNotNull(p56)
