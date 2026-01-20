@@ -33,9 +33,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.example.dash22b.data.DisplayUnit
 import com.example.dash22b.data.ParameterDefinition
 import com.example.dash22b.data.PresetManager.Companion.GAUGE_DISABLED_PARAM
-import com.example.dash22b.data.DisplayUnit
 import com.example.dash22b.di.LocalParameterRegistry
 import com.example.dash22b.ui.theme.DashboardDarkBg
 
@@ -114,32 +114,46 @@ fun ParameterBottomSheet(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(text = "Unit:", color = Color.Gray)
-                        
-                        Box {
-                            OutlinedButton(
-                                onClick = { dropdownExpanded = true },
-                                modifier = Modifier.padding(start = 8.dp)
-                            ) {
-                                Text(selectedUnit?.displayName() ?: selectedParam!!.unit.displayName())
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("▼", style = MaterialTheme.typography.labelSmall)
-                            }
-                            
-                            DropdownMenu(
-                                expanded = dropdownExpanded,
-                                onDismissRequest = { dropdownExpanded = false },
-                                modifier = Modifier.background(Color.DarkGray)
-                            ) {
-                                selectedParam!!.unit.getCompatibleUnits().forEach { unit ->
-                                    DropdownMenuItem(
-                                        text = { Text(unit.displayName(), color = Color.White) },
-                                        onClick = {
-                                            selectedUnit = unit
-                                            dropdownExpanded = false
-                                        }
+
+                        val compatibleUnits = selectedParam!!.unit.getCompatibleUnits()
+                        if (compatibleUnits.size > 1) {
+                            Box {
+                                OutlinedButton(
+                                    onClick = { dropdownExpanded = true },
+                                    modifier = Modifier.padding(start = 8.dp)
+                                ) {
+                                    Text(
+                                        selectedUnit?.displayName()
+                                            ?: selectedParam!!.unit.displayName()
                                     )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("▼", style = MaterialTheme.typography.labelSmall)
+                                }
+
+                                DropdownMenu(
+                                    expanded = dropdownExpanded,
+                                    onDismissRequest = { dropdownExpanded = false },
+                                    modifier = Modifier.background(Color.DarkGray)
+                                ) {
+                                    compatibleUnits.forEach { unit ->
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(unit.displayName(), color = Color.White)
+                                            },
+                                            onClick = {
+                                                selectedUnit = unit
+                                                dropdownExpanded = false
+                                            }
+                                        )
+                                    }
                                 }
                             }
+                        } else {
+                            Text(
+                                text = selectedParam!!.unit.displayName(),
+                                color = Color.White,
+                                modifier = Modifier.padding(end = 8.dp)
+                            )
                         }
                     }
 
@@ -225,7 +239,7 @@ fun ParameterBottomSheet(
                             color = Color.Gray
                         )
                     }
-//                    HorizontalDivider(color = Color.DarkGray)
+                    //                    HorizontalDivider(color = Color.DarkGray)
                 }
             }
         }
