@@ -1,5 +1,7 @@
 package com.example.dash22b.obd
 
+import timber.log.Timber
+
 /**
  * SSM ECU initialization response data.
  * Contains the raw init response bytes and provides methods for:
@@ -82,7 +84,7 @@ class SsmEcuInit(private val packet: SsmPacket) {
         val actualIndex = 1 + ecuByteIndex
 
         if (actualIndex < 0 || actualIndex >= packet.data.size) {
-            println("isParameterSupported false - invalid index: $actualIndex for ecuByteIndex: $ecuByteIndex and ecuBit $ecuBit packet data len: ${packet.data.size}")
+//            Timber.d("isParameterSupported false - invalid index: $actualIndex for ecuByteIndex: $ecuByteIndex and ecuBit $ecuBit packet data len: ${packet.data.size}")
             return false
         }
 

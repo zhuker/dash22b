@@ -6,13 +6,13 @@ enum class DisplayUnit(vararg val names: String) {
     UNKNOWN(""),
 
     // Temperature units
-    C("°C"),
-    F("°F"),
+    C("°C", "C"),
+    F("°F", "F"),
 
     // Pressure units
     BAR("bar"),
-    PSI("psi"),
-    KPA("kPa"),
+    PSI("psi", "psi relative sea level"),
+    KPA("kPa", "kPa absolute", "kPa relative"),
 
     // Speed units
     MPH("mph"),
@@ -20,16 +20,21 @@ enum class DisplayUnit(vararg val names: String) {
 
     // Air/Fuel ratio units
     LAMBDA("lambda"),
-    AFR("AFR"),
+    AFR("AFR", "estimated AFR"),
 
     // Angle units
-    DEGREES("°", "deg"),
+    DEGREES("°", "deg", "degrees"),
 
     // Other units
+    L100KM("l/100km"),
+    MPG("mpg"),
+    KM("km"),
+    MILES("miles"),
     RPM("rpm"),
-    PERCENT("%"),
-    VOLTS("V"),
+    PERCENT("%", "percent", "absolute %"),
+    VOLTS("V", "Volts"),
     MILLIAMPS("mA"),
+    OHM("ohm"),
     MILLISECONDS("ms"),
     GRAMS_PER_SEC("g/s"),
     GRAMS_PER_REV("g/rev"),
@@ -44,6 +49,8 @@ enum class DisplayUnit(vararg val names: String) {
             MPH, KMH -> listOf(MPH, KMH)
             LAMBDA, AFR -> listOf(LAMBDA, AFR)
             DAM, MULTIPLIER -> listOf(DAM, MULTIPLIER)
+            KM, MILES -> listOf(KM, MILES)
+            L100KM, MPG -> listOf(L100KM, MPG)
             else -> listOf(this)
         }
     }
@@ -55,8 +62,9 @@ enum class DisplayUnit(vararg val names: String) {
     companion object {
 
         fun fromString(value: String): DisplayUnit {
+            val value_ = value.lowercase()
             for (unit in DisplayUnit.entries) {
-                if (unit.names.contains(value)) {
+                if (unit.names.map { it.lowercase() }.contains(value_)) {
                     return unit
                 }
             }
@@ -92,6 +100,10 @@ object UnitConverter {
             // Speed
             (from == DisplayUnit.MPH && to == DisplayUnit.KMH) -> value * 1.60934f
             (from == DisplayUnit.KMH && to == DisplayUnit.MPH) -> value / 1.60934f
+            (from == DisplayUnit.KM && to == DisplayUnit.MILES) -> value / 1.60934f
+            (from == DisplayUnit.MILES && to == DisplayUnit.KM) -> value * 1.60934f
+            (from == DisplayUnit.L100KM && to == DisplayUnit.MPG) -> 235.215f / value
+            (from == DisplayUnit.MPG && to == DisplayUnit.L100KM) -> 235.215f / value
 
             else -> {
                 Timber.w("Unknown conversion from '$from' to '$to'")

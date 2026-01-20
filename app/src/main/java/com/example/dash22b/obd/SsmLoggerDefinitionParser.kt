@@ -162,7 +162,7 @@ class SsmLoggerDefinitionParser(private val ecuInit: SsmEcuInit?) {
             val conversionElement = conversionNodes.item(0) as Element
             expression = conversionElement.getAttribute("expr")
             val unitStr = conversionElement.getAttribute("units")
-            unit = parseUnit(unitStr)
+            unit = DisplayUnit.fromString(unitStr)
         }
 
         // Validate required fields
@@ -236,7 +236,7 @@ class SsmLoggerDefinitionParser(private val ecuInit: SsmEcuInit?) {
             val conversionElement = conversionNodes.item(0) as Element
             expression = conversionElement.getAttribute("expr")
             val unitStr = conversionElement.getAttribute("units")
-            unit = parseUnit(unitStr)
+            unit = DisplayUnit.fromString(unitStr)
         }
 
         if (expression == null) {
@@ -319,37 +319,6 @@ class SsmLoggerDefinitionParser(private val ecuInit: SsmEcuInit?) {
         } catch (e: NumberFormatException) {
             Timber.w("Failed to parse address: $addressStr")
             null
-        }
-    }
-
-    /**
-     * Map XML unit string to Unit enum.
-     */
-    private fun parseUnit(unitStr: String): DisplayUnit {
-        return when (unitStr.lowercase()) {
-            "rpm" -> DisplayUnit.RPM
-            "c", "°c" -> DisplayUnit.C
-            "f", "°f" -> DisplayUnit.F
-            "%", "percent" -> DisplayUnit.PERCENT
-            "v", "volts" -> DisplayUnit.VOLTS
-            "kpa" -> DisplayUnit.KPA
-            "bar" -> DisplayUnit.BAR
-            "psi" -> DisplayUnit.PSI
-            "km/h" -> DisplayUnit.KMH
-            "mph" -> DisplayUnit.MPH
-            "g/s" -> DisplayUnit.GRAMS_PER_SEC
-            "g/rev" -> DisplayUnit.GRAMS_PER_REV
-            "degrees", "°" -> DisplayUnit.DEGREES
-            "ms" -> DisplayUnit.MILLISECONDS
-            "ma" -> DisplayUnit.MILLIAMPS
-            "lambda" -> DisplayUnit.LAMBDA
-            "afr" -> DisplayUnit.AFR
-            "multiplier" -> DisplayUnit.MULTIPLIER
-            "switch" -> DisplayUnit.SWITCH
-            else -> {
-                Timber.v("Unknown unit: $unitStr")
-                DisplayUnit.UNKNOWN
-            }
         }
     }
 

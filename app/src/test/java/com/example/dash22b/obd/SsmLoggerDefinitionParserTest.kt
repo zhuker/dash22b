@@ -1,8 +1,13 @@
 package com.example.dash22b.obd
 
+import android.util.Log
 import com.example.dash22b.data.DisplayUnit
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
-import org.junit.Assert.*
+import timber.log.Timber
 import java.io.File
 
 /**
@@ -14,6 +19,46 @@ import java.io.File
  * Run this test to see which parameters are available for your ECU ROM ID.
  */
 class SsmLoggerDefinitionParserTest {
+
+    @Before
+    fun setupClass() {
+        Timber.plant(object : Timber.Tree() {
+            override fun isLoggable(tag: String?, priority: Int): Boolean {
+                return true
+            }
+
+            override fun log(
+                priority: Int,
+                tag: String?,
+                message: String,
+                t: Throwable?
+            ) {
+                val priority_ = when (priority) {
+                    Log.DEBUG -> "DEBUG"
+                    Log.VERBOSE -> "VERBOSE"
+                    Log.INFO -> "INFO"
+                    Log.WARN -> "WARN"
+                    Log.ERROR -> "ERROR"
+                    Log.ASSERT -> "ASSERT"
+                    else -> "UNKNOWN"
+                }
+                val sb = StringBuilder()
+                sb.append(priority_)
+                if (tag != null) {
+                    sb.append(' ').append(tag)
+                }
+                sb.append(" ").append(message)
+                if (t != null) {
+                    sb.append(" ").append(t.toString())
+                }
+                println(sb.toString())
+                t?.printStackTrace()
+            }
+
+        })
+    }
+
+
 
     // TODO: Replace hardcoded ROM ID with actual ROM ID from serial cable connection
     // This ROM ID should be retrieved dynamically when the ECU is connected
@@ -272,35 +317,32 @@ class SsmLoggerDefinitionParserTest {
             SsmLoggerDefinitionParser.parseParameters(inputStream, ecuInit, 1)
         }
         assertTrue(!parameters.isEmpty())
+        val p56 = parameters.firstOrNull { it.id == "P56" } // A/F Sensor #1 Resistance
+        assertNotNull(p56)
+        assertEquals(DisplayUnit.OHM, p56!!.unit)
+
 
         println("Found parameters:")
-        val standards = parameters.filter { !it.id.startsWith("E") && it.unit != DisplayUnit.SWITCH }
-        standards.forEach { println("P: ${it.id} - ${it.name} (${it.address})") }
+        val standards =
+            parameters.filter { !it.id.startsWith("E") && it.unit != DisplayUnit.SWITCH }
+        standards.forEach { println("P: ${it.id} - ${it.name} ${it.unit} (${it.address})") }
 
         val switches = parameters.filter { it.unit == DisplayUnit.SWITCH }
         if (switches.isNotEmpty()) {
             println("\nFound switches:")
-            switches.forEach { println("S: ${it.id} - ${it.name} (${it.address})") }
+            switches.forEach { println("S: ${it.id} - ${it.name} ${it.unit} (${it.address})") }
         }
 
         val extended = parameters.filter { it.id.startsWith("E") }
         if (extended.isNotEmpty()) {
             println("\nFound extended parameters:")
-            extended.forEach { println("E: ${it.id} - ${it.name} (${it.address})") }
+            extended.forEach { println("E: ${it.id} - ${it.name} ${it.unit} (${it.address})") }
         }
 
         println("\nTotal: ${parameters.size} (Std: ${standards.size}, Sw: ${switches.size}, Ext: ${extended.size})")
 
-        // Assertions from original code, kept as they are not explicitly removed
-        val standardParams = parameters.filter { it.id.startsWith("P") }
-        val extendedParams = parameters.filter { it.id.startsWith("E") }
-        println("\n--- Extended Parameters ---")
-        extendedParams.sortedBy { it.id }.forEach {
-            println("${it.id}: ${it.name} [Addr: 0x${it.address.toString(16).uppercase()}]")
-        }
-
-        assertTrue("Should find standard parameters", standardParams.isNotEmpty())
-        assertTrue("Should find extended parameters", extendedParams.isNotEmpty())
+        assertTrue("Should find standard parameters", standards.isNotEmpty())
+        assertTrue("Should find extended parameters", extended.isNotEmpty())
 
         val paramById = parameters.associateBy { it.id }
         paramById.forEach {
