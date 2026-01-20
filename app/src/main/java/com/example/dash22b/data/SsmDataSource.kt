@@ -90,10 +90,7 @@ class SsmDataSource(private val context: Context,
                 retryDelay = min(retryDelay * 2, MAX_RETRY_DELAY_MS)
             }
 
-            // Continuous polling loop
-            var history = EngineData()
             var consecutiveErrors = 0
-
             while (true) {
                 try {
                     // Get parameters to read based on current subscription
@@ -107,8 +104,7 @@ class SsmDataSource(private val context: Context,
 
                     val response = serialManager.readParameters(parametersToRead)
                     if (response != null) {
-                        val engineData = parseResponse(response, parametersToRead, history)
-                        history = engineData
+                        val engineData = parseResponse(response, parametersToRead) ?: EngineData()
                         emit(engineData)
                         consecutiveErrors = 0  // Reset error counter on success
                     } else {
@@ -183,24 +179,22 @@ class SsmDataSource(private val context: Context,
      *
      * @param packet The SSM response packet
      * @param parametersRead The parameters that were requested (in order)
-     * @param previousData Previous EngineData for history tracking
      */
     private fun parseResponse(
         packet: com.example.dash22b.obd.SsmPacket,
-        parametersRead: List<SsmParameter>,
-        previousData: EngineData
-    ): EngineData {
+        parametersRead: List<SsmParameter>
+    ): EngineData? {
         val data = packet.data
 
         // Response format: [0xE8, value1, value2, ...]
         // Skip first byte (0xE8 marker)
         if (data.isEmpty() || data[0] != com.example.dash22b.obd.SsmPacket.RSP_READ_ADDRESS) {
             Timber.tag(TAG).w("Invalid response format")
-            return previousData
+            return null
         }
 
-        // Start with previous values to preserve unsubscribed parameters
-        val dynamicValues = previousData.values.toMutableMap()
+        // Fresh map for this specific response packet
+        val dynamicValues = mutableMapOf<String, ValueWithUnit>()
         var offset = 1  // Skip 0xE8 marker
 
         // Parse each parameter value (only the ones we requested)
