@@ -47,6 +47,8 @@ class ParameterRegistry private constructor(
             "Fuel Tank Pressure" to RangeWithUnit(-2f, 2f, DisplayUnit.BAR),
             "Coolant Temperature" to RangeWithUnit(20f, 150f, DisplayUnit.C),
             "Atmospheric Pressure" to RangeWithUnit(0f, 2f, DisplayUnit.BAR),
+            "Manifold Relative Pressure" to RangeWithUnit(-1f, 2f, DisplayUnit.BAR),
+            "Manifold Absolute Pressure" to RangeWithUnit(0f, 2f, DisplayUnit.BAR),
         )
         private val manualMap = mapOf(
             "Comm Fuel Final" to "Final Fuel Base", // Commanded Fuel Final (AFR) = Stoichiometric AFR / Final Fueling Base (Lambda)
