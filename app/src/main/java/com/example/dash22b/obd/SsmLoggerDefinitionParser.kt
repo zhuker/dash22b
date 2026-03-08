@@ -241,7 +241,12 @@ class SsmLoggerDefinitionParser(private val ecuInit: SsmEcuInit?) {
             expression = conversionElement.getAttribute("expr")
             val unitStr = conversionElement.getAttribute("units")
             unit = DisplayUnit.fromString(unitStr)
-            storageType = conversionElement.getAttribute("storagetype").takeIf { it.isNotEmpty() }
+            // Check all conversions for storagetype (first conversion may omit it)
+            for (ci in 0 until conversionNodes.length) {
+                val conv = conversionNodes.item(ci) as Element
+                storageType = conv.getAttribute("storagetype").takeIf { it.isNotEmpty() }
+                if (storageType != null) break
+            }
         }
 
         if (expression == null) {
