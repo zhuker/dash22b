@@ -23,6 +23,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -139,21 +140,25 @@ private fun ChatBubble(
                 .background(Color(0xFF2D2D2D), shape = RoundedCornerShape(12.dp))
                 .padding(12.dp)
         ) {
-            if (code != null) {
-                Text(
-                    text = code,
-                    color = Color.White,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-            }
+            SelectionContainer {
+                Column {
+                    if (code != null) {
+                        Text(
+                            text = code,
+                            color = Color.White,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
 
-            Text(
-                text = message,
-                color = Color.LightGray,
-                style = MaterialTheme.typography.bodyMedium
-            )
+                    Text(
+                        text = message,
+                        color = Color.LightGray,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
 
             // Status chips
             if (isTemporary || isMemorized) {
