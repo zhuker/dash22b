@@ -1,6 +1,7 @@
 package com.example.dash22b.di
 
 import androidx.compose.runtime.staticCompositionLocalOf
+import com.example.dash22b.data.DtcRepository
 import com.example.dash22b.data.ParameterRegistry
 import com.example.dash22b.data.PresetManager
 import com.example.dash22b.data.SsmRepository
@@ -23,4 +24,8 @@ val LocalPresetManager = staticCompositionLocalOf<PresetManager> {
 
 val LocalSsmRepository = staticCompositionLocalOf<SsmRepository> {
     error("SsmRepository not provided. Wrap your content with CompositionLocalProvider.")
+}
+
+val LocalDtcRepository = staticCompositionLocalOf<DtcRepository> {
+    error("DtcRepository not provided. Wrap your content with CompositionLocalProvider.")
 }

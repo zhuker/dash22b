@@ -20,6 +20,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import androidx.compose.runtime.CompositionLocalProvider
+import com.example.dash22b.di.LocalDtcRepository
 import com.example.dash22b.di.LocalParameterRegistry
 import com.example.dash22b.di.LocalPresetManager
 import com.example.dash22b.di.LocalSsmRepository
@@ -93,7 +94,8 @@ class MainActivity : ComponentActivity() {
                 LocalParameterRegistry provides container.parameterRegistry,
                 LocalTpmsRepository provides container.tpmsRepository,
                 LocalPresetManager provides container.presetManager,
-                LocalSsmRepository provides container.ssmRepository
+                LocalSsmRepository provides container.ssmRepository,
+                LocalDtcRepository provides container.dtcRepository
             ) {
                 Dash22bTheme {
                     // A surface container using the 'background' color from the theme

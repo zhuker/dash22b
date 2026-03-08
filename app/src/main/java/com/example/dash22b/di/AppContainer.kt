@@ -6,9 +6,12 @@ import com.example.dash22b.data.AssetLoader
 import com.example.dash22b.data.ParameterRegistry
 import com.example.dash22b.data.PresetManager
 import com.example.dash22b.data.PresetRepository
+import com.example.dash22b.data.DtcRepository
 import com.example.dash22b.data.SsmRepository
 import com.example.dash22b.data.TpmsRepository
+import com.example.dash22b.obd.SsmDtcCode
 import com.example.dash22b.obd.SsmEcuInit
+import com.example.dash22b.obd.SsmLoggerDefinitionParser
 
 /**
  * Application-scoped dependency container.
@@ -51,5 +54,16 @@ class AppContainer(context: Context) {
 
     val ssmRepository: SsmRepository by lazy {
         SsmRepository()
+    }
+
+    val dtcRepository: DtcRepository by lazy {
+        DtcRepository()
+    }
+
+    val dtcDefinitions: List<SsmDtcCode> by lazy {
+        val ecuInit = SsmEcuInit.createHardcoded()
+        assetLoader.open("logger_METRIC_EN_v370.xml").use {
+            SsmLoggerDefinitionParser.parseDtcCodes(it, ecuInit)
+        }
     }
 }

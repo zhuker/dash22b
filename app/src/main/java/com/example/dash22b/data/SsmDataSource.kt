@@ -1,10 +1,13 @@
 package com.example.dash22b.data
 
 import android.content.Context
+import com.example.dash22b.obd.SsmDtcCode
 import com.example.dash22b.obd.SsmEcuInit
 import com.example.dash22b.obd.SsmExpressionEvaluator
+import com.example.dash22b.obd.SsmPacket
 import com.example.dash22b.obd.SsmParameter
 import com.example.dash22b.obd.SsmSerialManager
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -13,6 +16,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.Dispatchers
 import timber.log.Timber
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.min
 
 /**
@@ -92,8 +96,23 @@ class SsmDataSource(private val context: Context,
     private val serialManager = SsmSerialManager(context)
     private val allParameters = parameterRegistry.getAllDefinitions()
 
+    // MIL switch - hardcoded because it may be filtered out by ECU init capability check
+    // (ecubyteindex=56 can exceed the hardcoded init response length)
+    private val milParameter = SsmParameter(
+        id = "S155",
+        name = SsmRepository.MIL_PARAM_NAME,
+        address = 0x000196,
+        length = 1,
+        expression = "bit:7",
+        unit = DisplayUnit.SWITCH
+    )
+
     // Parameter subscription - only poll these parameters
     private val _subscribedParams = MutableStateFlow<Set<String>>(emptySet())
+
+    // Pending DTC read request (serialized with polling loop)
+    private val pendingDtcRequest = AtomicReference<CompletableDeferred<List<SsmDtcCode>>?>(null)
+    private var dtcDefinitions: List<SsmDtcCode> = emptyList()
 
     /**
      * Subscribe to specific parameters by name.
@@ -114,8 +133,119 @@ class SsmDataSource(private val context: Context,
             emptyList()
         } else {
             // Filter to only subscribed parameters
-            allParameters.filter { param -> subscribed.contains(param.name) }.map { it as SsmParameter }
+            val params = allParameters.filter { param -> subscribed.contains(param.name) }.map { it as SsmParameter }.toMutableList()
+            // Always include MIL if subscribed (may not be in registry due to capability filtering)
+            if (subscribed.contains(SsmRepository.MIL_PARAM_NAME) && params.none { it.name == SsmRepository.MIL_PARAM_NAME }) {
+                params.add(milParameter)
+            }
+            params
         }
+    }
+
+    /**
+     * Request a DTC read from the polling loop. Returns a deferred that completes
+     * with the DTC results once the polling loop services the request.
+     */
+    fun requestDtcRead(definitions: List<SsmDtcCode>): CompletableDeferred<List<SsmDtcCode>> {
+        val deferred = CompletableDeferred<List<SsmDtcCode>>()
+        dtcDefinitions = definitions
+        pendingDtcRequest.set(deferred)
+        return deferred
+    }
+
+    /**
+     * Read DTC codes from the ECU. Must be called from the polling loop (serial not thread-safe).
+     */
+    private fun readDtcCodes(definitions: List<SsmDtcCode>): List<SsmDtcCode> {
+        if (definitions.isEmpty()) return emptyList()
+
+        // Collect unique addresses for temporary and memorized reads
+        val tmpAddresses = definitions.map { it.tmpAddr }.distinct().sorted()
+        val memAddresses = definitions.map { it.memAddr }.distinct().sorted()
+
+        Timber.tag(TAG).i("DTC: reading ${tmpAddresses.size} tmp addresses, ${memAddresses.size} mem addresses")
+
+        // Read temporary addresses
+        val tmpValues = readAddressBytes(tmpAddresses)
+        if (tmpValues == null) {
+            Timber.tag(TAG).w("DTC: tmp address read failed")
+            return emptyList()
+        }
+        Timber.tag(TAG).i("DTC: tmp read OK, ${tmpValues.size} bytes, non-zero: ${tmpValues.count { it.toInt() != 0 }}")
+
+        // Read memorized addresses
+        val memValues = readAddressBytes(memAddresses)
+        if (memValues == null) {
+            Timber.tag(TAG).w("DTC: mem address read failed")
+            return emptyList()
+        }
+        Timber.tag(TAG).i("DTC: mem read OK, ${memValues.size} bytes, non-zero: ${memValues.count { it.toInt() != 0 }}")
+
+        // Map addresses to byte values
+        val tmpMap = tmpAddresses.zip(tmpValues).toMap()
+        val memMap = memAddresses.zip(memValues).toMap()
+
+        // Check each DTC
+        return definitions.mapNotNull { dtc ->
+            val tmpByte = tmpMap[dtc.tmpAddr] ?: return@mapNotNull null
+            val memByte = memMap[dtc.memAddr] ?: return@mapNotNull null
+
+            // 0xFF means the ECU doesn't support this address (unimplemented memory)
+            val tmpInt = tmpByte.toInt() and 0xFF
+            val memInt = memByte.toInt() and 0xFF
+            if (tmpInt == 0xFF && memInt == 0xFF) return@mapNotNull null
+
+            val isTemp = tmpInt and (1 shl dtc.bit) != 0
+            val isMem = memInt and (1 shl dtc.bit) != 0
+
+            if (isTemp || isMem) {
+                Timber.tag(TAG).d("DTC active: ${dtc.name} tmp=0x${String.format("%02X", tmpByte)} mem=0x${String.format("%02X", memByte)} bit=${dtc.bit} current=$isTemp stored=$isMem")
+                dtc.copy(isTemporary = isTemp, isMemorized = isMem)
+            } else {
+                null
+            }
+        }
+    }
+
+    /**
+     * Read a batch of individual byte addresses from the ECU.
+     * Splits into chunks to avoid exceeding ECU limits.
+     * Returns the byte values in the same order as the addresses.
+     */
+    private fun readAddressBytes(addresses: List<Int>): List<Byte>? {
+        if (addresses.isEmpty()) return emptyList()
+
+        // Split into chunks of ~30 addresses to stay well within ECU limits
+        val results = mutableListOf<Byte>()
+        for (chunk in addresses.chunked(30)) {
+            val params = chunk.mapIndexed { i, addr ->
+                SsmParameter(
+                    id = "DTC_$i",
+                    name = "DTC_$i",
+                    address = addr,
+                    length = 1,
+                    expression = "x",
+                    unit = DisplayUnit.UNKNOWN
+                )
+            }
+
+            val response = serialManager.readParameters(params)
+            if (response == null) {
+                Timber.tag(TAG).w("DTC batch read failed for ${chunk.size} addresses")
+                return null
+            }
+            val data = response.data
+            if (data.isEmpty() || data[0] != SsmPacket.RSP_READ_ADDRESS) return null
+
+            if (data.size < 1 + chunk.size) {
+                Timber.tag(TAG).w("DTC response too short: ${data.size} for ${chunk.size} addresses")
+                return null
+            }
+            for (j in 1..chunk.size) {
+                results.add(data[j])
+            }
+        }
+        return results
     }
 
     /**
@@ -149,6 +279,21 @@ class SsmDataSource(private val context: Context,
             var consecutiveErrors = 0
             while (true) {
                 try {
+                    // Check for pending DTC read request (must be serviced from this thread)
+                    val dtcDeferred = pendingDtcRequest.getAndSet(null)
+                    if (dtcDeferred != null) {
+                        Timber.tag(TAG).i("Servicing DTC read request (${dtcDefinitions.size} definitions)")
+                        try {
+                            val results = readDtcCodes(dtcDefinitions)
+                            dtcDeferred.complete(results)
+                            Timber.tag(TAG).i("DTC read complete: ${results.size} active codes")
+                        } catch (e: Exception) {
+                            if (e is CancellationException) throw e
+                            Timber.tag(TAG).e(e, "DTC read failed")
+                            dtcDeferred.complete(emptyList())
+                        }
+                    }
+
                     // Get parameters to read based on current subscription
                     val parametersToRead = getParametersToRead()
 

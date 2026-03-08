@@ -14,6 +14,8 @@ import androidx.core.app.NotificationCompat
 import com.example.dash22b.DashApplication
 import com.example.dash22b.MainActivity
 import com.example.dash22b.R
+import com.example.dash22b.data.DtcRepository
+import com.example.dash22b.data.DtcState
 import com.example.dash22b.data.ParameterRegistry
 import com.example.dash22b.data.SsmDataSource
 import com.example.dash22b.data.SsmRepository
@@ -43,6 +45,8 @@ class DashService : Service() {
     private lateinit var ssmDataSource: SsmDataSource
     private lateinit var ssmRepository: SsmRepository
     private lateinit var parameterRegistry: ParameterRegistry
+    private lateinit var dtcRepository: DtcRepository
+    private lateinit var appContainer: com.example.dash22b.di.AppContainer
 
     // Local mutable state for TPMS
     private val currentTpmsMap = mutableMapOf<String, TpmsState>(
@@ -70,7 +74,7 @@ class DashService : Service() {
         createNotificationChannel()
         startForegroundService()
 
-        val appContainer = (application as DashApplication).appContainer
+        appContainer = (application as DashApplication).appContainer
 
         // TPMS setup
         tpmsRepository = appContainer.tpmsRepository
@@ -80,6 +84,7 @@ class DashService : Service() {
         ssmRepository = appContainer.ssmRepository
         parameterRegistry = appContainer.parameterRegistry
         ssmDataSource = SsmDataSource(this, parameterRegistry)
+        dtcRepository = appContainer.dtcRepository
 
         startTpmsScanning()
         startTpmsStaleChecker()
@@ -120,6 +125,37 @@ class DashService : Service() {
         serviceScope.launch {
             ssmDataSource.getEngineData().collect { engineData ->
                 ssmRepository.updateEngineData(engineData)
+            }
+        }
+
+        // Observe MIL status from engine data
+        serviceScope.launch {
+            ssmRepository.engineData.collect { data ->
+                val milValue = data.values[SsmRepository.MIL_PARAM_NAME]
+                if (milValue != null) {
+                    dtcRepository.updateMilStatus(milValue.value >= 1f)
+                }
+            }
+        }
+
+        // Observe DTC read requests from UI
+        serviceScope.launch {
+            Timber.i("DTC read request observer started")
+            dtcRepository.readRequests.collect {
+                Timber.i("DTC read requested from UI")
+                try {
+                    val definitions = appContainer.dtcDefinitions
+                    val deferred = ssmDataSource.requestDtcRead(definitions)
+                    val results = deferred.await()
+                    dtcRepository.updateDtcState(
+                        DtcState.Loaded(results)
+                    )
+                } catch (e: Exception) {
+                    Timber.e(e, "DTC read failed")
+                    dtcRepository.updateDtcState(
+                        DtcState.Error(e.message ?: "Unknown error")
+                    )
+                }
             }
         }
     }
