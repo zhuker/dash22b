@@ -10,6 +10,7 @@ import org.junit.Before
 import org.junit.Test
 import timber.log.Timber
 import java.io.File
+import kotlin.text.Regex
 
 /**
  * Unit tests for SSM Logger Definition XML parsing.
@@ -21,11 +22,12 @@ import java.io.File
  */
 class SsmLoggerDefinitionParserTest {
 
+    var logLevel = Log.VERBOSE
     @Before
     fun setupClass() {
         Timber.plant(object : Timber.Tree() {
             override fun isLoggable(tag: String?, priority: Int): Boolean {
-                return true
+                return priority > logLevel
             }
 
             override fun log(
@@ -35,8 +37,8 @@ class SsmLoggerDefinitionParserTest {
                 t: Throwable?
             ) {
                 val priority_ = when (priority) {
-                    Log.DEBUG -> "DEBUG"
                     Log.VERBOSE -> "VERBOSE"
+                    Log.DEBUG -> "DEBUG"
                     Log.INFO -> "INFO"
                     Log.WARN -> "WARN"
                     Log.ERROR -> "ERROR"
@@ -58,7 +60,6 @@ class SsmLoggerDefinitionParserTest {
 
         })
     }
-
 
 
     // TODO: Replace hardcoded ROM ID with actual ROM ID from serial cable connection
@@ -291,5 +292,16 @@ class SsmLoggerDefinitionParserTest {
             }
         }
 
+    }
+
+    @Test
+    fun testPrintParameterNames() {
+        logLevel = Log.ERROR
+        val parameters = TestHelper.stiParams()
+        parameters.forEach {
+            val r = it.name.replace("16-bit ECU", "").replace("4-byte", "").replace(Regex("[/#*\\-()]+"), "")
+            println("${it.name} -> $r")
+
+        }
     }
 }
