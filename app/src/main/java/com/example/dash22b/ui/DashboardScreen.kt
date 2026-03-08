@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Settings
@@ -41,6 +43,7 @@ import com.example.dash22b.data.GaugeConfig
 import com.example.dash22b.data.PresetManager.Companion.GAUGE_DISABLED_PARAM
 import com.example.dash22b.data.PresetState
 import com.example.dash22b.data.UnitConverter
+import com.example.dash22b.di.LocalDtcRepository
 import com.example.dash22b.di.LocalParameterRegistry
 import com.example.dash22b.di.LocalPresetManager
 import com.example.dash22b.di.LocalSsmRepository
@@ -48,6 +51,7 @@ import com.example.dash22b.di.LocalTpmsRepository
 import com.example.dash22b.service.DashService
 import com.example.dash22b.ui.components.CircularGauge
 import com.example.dash22b.ui.components.LineGraph
+import com.example.dash22b.ui.components.MessagesContent
 import com.example.dash22b.ui.components.ParameterBottomSheet
 import com.example.dash22b.ui.components.PresetBottomSheet
 import com.example.dash22b.ui.components.PresetLabel
@@ -65,7 +69,8 @@ import timber.log.Timber
 enum class ScreenMode {
     GAUGES,
     GRAPHS,
-    OTHER
+    OTHER,
+    MESSAGES
 }
 
 @Composable
@@ -85,6 +90,10 @@ fun DashboardScreen() {
     val allPresets by presetManager.allPresets.collectAsState()
     val gaugeConfigs by presetManager.currentConfigs.collectAsState()
     val subscribedParams by presetManager.subscribedParameters.collectAsState()
+
+    // DTC / MIL
+    val dtcRepository = LocalDtcRepository.current
+    val milActive by dtcRepository.milActive.collectAsState()
 
     // Subscribe to parameters when they change (goes to repository, service observes it)
     LaunchedEffect(subscribedParams) { ssmRepository.subscribeToParameters(subscribedParams) }
@@ -135,11 +144,14 @@ fun DashboardScreen() {
 
         if (isPortrait) {
             Column(
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize().then(
+                        if (currentMode == ScreenMode.MESSAGES) Modifier.imePadding() else Modifier
+                    )
                     /*.windowInsetsPadding(WindowInsets.safeDrawing)*/ ) { // Add padding for system
                 // bars
                 // Main Content
-                Box(modifier = Modifier.weight(1f).fillMaxWidth().padding(16.dp)) {
+                val contentPadding = if (currentMode == ScreenMode.MESSAGES) 0.dp else 16.dp
+                Box(modifier = Modifier.weight(1f).fillMaxWidth().padding(contentPadding)) {
                     when (currentMode) {
                         ScreenMode.GAUGES ->
                                 PortraitGaugesContent(
@@ -151,19 +163,23 @@ fun DashboardScreen() {
                                 )
                         ScreenMode.GRAPHS -> GraphsContent(engineData, history, gaugeConfigs)
                         ScreenMode.OTHER -> OtherContent(engineData)
+                        ScreenMode.MESSAGES -> MessagesContent()
                     }
                 }
 
                 // Bottom Status Bar (Now stacked below content in Portrait)
-                BottomStatusBar(
-                        engineData = engineData,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                )
+                if (currentMode != ScreenMode.MESSAGES) {
+                    BottomStatusBar(
+                            engineData = engineData,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+                }
 
                 // Bottom Navigation
                 BottomNavigationBar(
                         currentMode = currentMode,
-                        onModeSelected = { currentMode = it }
+                        onModeSelected = { currentMode = it },
+                        milActive = milActive
                 )
             }
         } else {
@@ -173,10 +189,11 @@ fun DashboardScreen() {
                     /*.windowInsetsPadding(WindowInsets.safeDrawing)*/ ) { // Add padding for system
                 // bars
                 // Sidebar
-                NavigationSidebar(currentMode = currentMode, onModeSelected = { currentMode = it })
+                NavigationSidebar(currentMode = currentMode, onModeSelected = { currentMode = it }, milActive = milActive)
 
                 // Main Content
-                Box(modifier = Modifier.weight(1f).fillMaxHeight().padding(16.dp)) {
+                val contentPadding = if (currentMode == ScreenMode.MESSAGES) 0.dp else 16.dp
+                Box(modifier = Modifier.weight(1f).fillMaxHeight().padding(contentPadding)) {
                     when (currentMode) {
                         ScreenMode.GAUGES ->
                                 GaugesContent(
@@ -188,13 +205,16 @@ fun DashboardScreen() {
                                 )
                         ScreenMode.GRAPHS -> GraphsContent(engineData, history, gaugeConfigs)
                         ScreenMode.OTHER -> OtherContent(engineData)
+                        ScreenMode.MESSAGES -> MessagesContent()
                     }
 
                     // Bottom Status Bar
-                    BottomStatusBar(
-                            engineData = engineData,
-                            modifier = Modifier.align(Alignment.BottomCenter)
-                    )
+                    if (currentMode != ScreenMode.MESSAGES) {
+                        BottomStatusBar(
+                                engineData = engineData,
+                                modifier = Modifier.align(Alignment.BottomCenter)
+                        )
+                    }
                 }
             }
         }
@@ -288,44 +308,60 @@ fun TpmsValueDisplay(state: com.example.dash22b.data.TpmsState?, label: String) 
 }
 
 @Composable
-fun NavigationSidebar(currentMode: ScreenMode, onModeSelected: (ScreenMode) -> Unit) {
+fun NavigationSidebar(
+    currentMode: ScreenMode,
+    onModeSelected: (ScreenMode) -> Unit,
+    milActive: Boolean = false
+) {
     Column(
             modifier =
                     Modifier.width(80.dp)
                             .fillMaxHeight()
-                            .background(Color(0xFF1E1E1E)), // Slightly lighter dark
+                            .background(Color(0xFF1E1E1E)),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
     ) {
         NavItem(
-                icon = Icons.Default.Home, // Gauges
+                icon = Icons.Default.Home,
                 label = "Gauges",
                 isSelected = currentMode == ScreenMode.GAUGES,
                 onClick = { onModeSelected(ScreenMode.GAUGES) }
         )
         Spacer(modifier = Modifier.height(32.dp))
         NavItem(
-                icon = Icons.Default.Menu, // Graphs
+                icon = Icons.Default.Menu,
                 label = "Graphs",
                 isSelected = currentMode == ScreenMode.GRAPHS,
                 onClick = { onModeSelected(ScreenMode.GRAPHS) }
         )
         Spacer(modifier = Modifier.height(32.dp))
         NavItem(
-                icon = Icons.Default.Settings, // Other
+                icon = Icons.Default.Settings,
                 label = "Other",
                 isSelected = currentMode == ScreenMode.OTHER,
                 onClick = { onModeSelected(ScreenMode.OTHER) }
+        )
+        Spacer(modifier = Modifier.height(32.dp))
+        NavItem(
+                icon = Icons.Default.Email,
+                label = "Messages",
+                isSelected = currentMode == ScreenMode.MESSAGES,
+                onClick = { onModeSelected(ScreenMode.MESSAGES) },
+                iconTint = if (milActive) Color.Red else Color.White
         )
     }
 }
 
 @Composable
-fun BottomNavigationBar(currentMode: ScreenMode, onModeSelected: (ScreenMode) -> Unit) {
+fun BottomNavigationBar(
+    currentMode: ScreenMode,
+    onModeSelected: (ScreenMode) -> Unit,
+    milActive: Boolean = false
+) {
     Row(
             modifier =
                     Modifier.fillMaxWidth()
-                            .height(64.dp) // Reduced height
+                            .height(64.dp)
                             .background(Color(0xFF1E1E1E)),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
@@ -348,29 +384,42 @@ fun BottomNavigationBar(currentMode: ScreenMode, onModeSelected: (ScreenMode) ->
                 isSelected = currentMode == ScreenMode.OTHER,
                 onClick = { onModeSelected(ScreenMode.OTHER) }
         )
+        NavItem(
+                icon = Icons.Default.Email,
+                label = "Messages",
+                isSelected = currentMode == ScreenMode.MESSAGES,
+                onClick = { onModeSelected(ScreenMode.MESSAGES) },
+                iconTint = if (milActive) Color.Red else Color.White
+        )
     }
 }
 
 @Composable
-fun NavItem(icon: ImageVector, label: String, isSelected: Boolean, onClick: () -> Unit) {
+fun NavItem(
+    icon: ImageVector,
+    label: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    iconTint: Color = Color.White
+) {
     Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.clickable(onClick = onClick).padding(4.dp) // Reduced padding
+            modifier = Modifier.clickable(onClick = onClick).padding(4.dp)
     ) {
         Box(
                 modifier =
-                        Modifier.size(32.dp) // Reduced icon container size
+                        Modifier.size(32.dp)
                                 .background(
                                         if (isSelected) Purple40 else Color.Transparent,
                                         shape = RoundedCornerShape(16.dp)
                                 ),
                 contentAlignment = Alignment.Center
-        ) { Icon(imageVector = icon, contentDescription = label, tint = Color.White) }
+        ) { Icon(imageVector = icon, contentDescription = label, tint = iconTint) }
         Text(
                 text = label,
                 color = Color.White,
                 style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.padding(top = 2.dp) // Reduced gap
+                modifier = Modifier.padding(top = 2.dp)
         )
     }
 }

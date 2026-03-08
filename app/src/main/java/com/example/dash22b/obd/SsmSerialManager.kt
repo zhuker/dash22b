@@ -364,6 +364,101 @@ class SsmSerialManager(private val context: Context) {
         }
     }
 
+    /**
+     * Writes a single byte to an ECU address.
+     * Used for ECU reset (clear codes): write 0x40 to 0x000060.
+     *
+     * @return true if ECU acknowledged the write
+     */
+    fun writeAddress(address: Int, value: Byte): Boolean {
+        val port = this.port ?: run {
+            Timber.tag(TAG).e("Not connected")
+            return false
+        }
+
+        // Build write request: [0xB8, addr_hi, addr_mid, addr_lo, value]
+        val data = byteArrayOf(
+            SsmPacket.CMD_WRITE_ADDRESS,
+            ((address shr 16) and 0xFF).toByte(),
+            ((address shr 8) and 0xFF).toByte(),
+            (address and 0xFF).toByte(),
+            value
+        )
+
+        val requestPacket = SsmPacket(
+            destination = SsmPacket.DESTINATION_ECU,
+            source = SsmPacket.SOURCE_DIAG,
+            data = data
+        )
+
+        try {
+            val txBytes = requestPacket.toBytes()
+            Timber.tag(TAG).i("Sending write request: ${requestPacket.toHexString()}")
+
+            try {
+                port.write(txBytes, WRITE_TIMEOUT_MS)
+            } catch (e: java.io.IOException) {
+                Timber.tag(TAG).w("Write failed: ${e.message}")
+                handleWriteError()
+                return false
+            }
+
+            Thread.sleep(50)
+
+            // Expected: echo (10 bytes) + response (7 bytes: 80 F0 10 02 F8 40 checksum)
+            val expectedRequestSize = txBytes.size
+            val expectedResponseSize = 7
+            val expectedTotal = expectedRequestSize + expectedResponseSize
+
+            val allBytes = ByteArray(expectedTotal)
+            val rxBuffer = ByteArray(256)
+            var totalBytesRead = 0
+
+            while (totalBytesRead < expectedTotal) {
+                val bytesRead = port.read(rxBuffer, READ_TIMEOUT_MS)
+                if (bytesRead <= 0) {
+                    Timber.tag(TAG).w("Read timeout: got $totalBytesRead of $expectedTotal bytes")
+                    break
+                }
+                val bytesToCopy = minOf(bytesRead, expectedTotal - totalBytesRead)
+                System.arraycopy(rxBuffer, 0, allBytes, totalBytesRead, bytesToCopy)
+                totalBytesRead += bytesToCopy
+            }
+
+            if (totalBytesRead < expectedTotal) {
+                Timber.tag(TAG).w("Incomplete write response: got $totalBytesRead of $expectedTotal bytes")
+                logHex("Partial data", allBytes.copyOf(totalBytesRead))
+                return false
+            }
+
+            logHex("Write response", allBytes)
+
+            // Parse response (after echo)
+            val responseBytes = allBytes.copyOfRange(expectedRequestSize, expectedTotal)
+            val response = SsmPacket.fromBytes(responseBytes)
+
+            if (response == null) {
+                Timber.tag(TAG).w("Failed to parse write response")
+                return false
+            }
+
+            // Verify write acknowledgment: data should be [0xF8, value]
+            if (response.data.size >= 2 &&
+                response.data[0] == SsmPacket.RSP_WRITE_ADDRESS &&
+                response.data[1] == value) {
+                Timber.tag(TAG).i("ECU write acknowledged")
+                return true
+            }
+
+            Timber.tag(TAG).w("Unexpected write response: ${response.toHexString()}")
+            return false
+
+        } catch (e: Exception) {
+            Timber.tag(TAG).e(e, "Error writing address")
+            return false
+        }
+    }
+
     private fun logHex(label: String, bytes: ByteArray) {
         val hex = bytes.joinToString(" ") { String.format("%02X", it) }
         Timber.tag(TAG).d("$label (${bytes.size} bytes): $hex")

@@ -70,5 +70,5 @@ dependencies {
     debugImplementation(libs.androidx.ui.test.manifest)
     implementation(libs.jakewharton.timber)
     implementation(libs.kotlinx.serialization.json)
-    implementation("com.github.mik3y:usb-serial-for-android:3.7.2")
+    implementation(project(":usbSerialForAndroid"))
 }

@@ -94,6 +94,13 @@ class SsmEcuInit(private val packet: SsmPacket) {
     }
 
     /**
+     * Get the length of the init response data (used for DTC filtering).
+     * RomRaider uses this to determine which DTCs are accessible.
+     */
+    val initResponseLength: Int
+        get() = packet.data.size
+
+    /**
      * Get the underlying SsmPacket
      */
     fun getPacket(): SsmPacket = packet

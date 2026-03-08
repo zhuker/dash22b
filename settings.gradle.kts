@@ -10,9 +10,10 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven { url = uri("https://jitpack.io") }
     }
 }
 
 rootProject.name = "Dash22b"
 include(":app")
+include(":usbSerialForAndroid")
+project(":usbSerialForAndroid").projectDir = file("usb-serial-for-android/usbSerialForAndroid")

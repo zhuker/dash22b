@@ -4,6 +4,7 @@ import com.example.dash22b.data.DisplayUnit
 import timber.log.Timber
 import java.io.InputStream
 import javax.xml.parsers.DocumentBuilderFactory
+import org.w3c.dom.Document
 import org.w3c.dom.Element
 import org.w3c.dom.Node
 
@@ -19,22 +20,14 @@ import org.w3c.dom.Node
 class SsmLoggerDefinitionParser(private val ecuInit: SsmEcuInit?) {
 
     /**
-     * Parse the XML input stream and return a list of supported parameters.
-     *
-     * @param inputStream The XML file input stream
-     * @param target Target filter: 1=ECU only, 2=TCU only, 3=both (default: include all ECU-compatible)
-     * @return List of SsmParameter objects that are supported by the ECU
+     * Parse XML input stream, stripping DOCTYPE to avoid Android parser issues.
      */
-    fun parse(inputStream: InputStream, target: Int = 1): List<SsmParameter> {
-        val parameters = mutableListOf<SsmParameter>()
-
-        // Read XML content as string and remove DOCTYPE to avoid Android parser issues
+    private fun parseXmlDocument(inputStream: InputStream): Document {
         val fullContent = inputStream.bufferedReader().readText()
         val sanitizedContent = if (fullContent.contains("<!DOCTYPE")) {
             val startIdx = fullContent.indexOf("<!DOCTYPE")
             val endIdx = fullContent.indexOf("]>", startIdx)
             if (endIdx != -1) {
-                // Remove the DOCTYPE section entirely
                 fullContent.substring(0, startIdx) + fullContent.substring(endIdx + 2)
             } else {
                 fullContent
@@ -46,7 +39,19 @@ class SsmLoggerDefinitionParser(private val ecuInit: SsmEcuInit?) {
         val factory = DocumentBuilderFactory.newInstance()
         factory.isValidating = false
         val builder = factory.newDocumentBuilder()
-        val document = builder.parse(sanitizedContent.byteInputStream())
+        return builder.parse(sanitizedContent.byteInputStream())
+    }
+
+    /**
+     * Parse the XML input stream and return a list of supported parameters.
+     *
+     * @param inputStream The XML file input stream
+     * @param target Target filter: 1=ECU only, 2=TCU only, 3=both (default: include all ECU-compatible)
+     * @return List of SsmParameter objects that are supported by the ECU
+     */
+    fun parse(inputStream: InputStream, target: Int = 1): List<SsmParameter> {
+        val parameters = mutableListOf<SsmParameter>()
+        val document = parseXmlDocument(inputStream)
 
         // Initialize ROM ID once if available
         val romId = ecuInit?.getRomId()
@@ -316,6 +321,80 @@ class SsmLoggerDefinitionParser(private val ecuInit: SsmEcuInit?) {
     }
 
     /**
+     * Parse DTC (Diagnostic Trouble Code) definitions from the XML.
+     * Filters based on ECU init response length (following RomRaider logic).
+     *
+     * @param inputStream The XML file input stream
+     * @return List of SsmDtcCode definitions supported by the ECU
+     */
+    fun parseDtcCodes(inputStream: InputStream): List<SsmDtcCode> {
+        val dtcCodes = mutableListOf<SsmDtcCode>()
+        val document = parseXmlDocument(inputStream)
+
+        // Determine max ecubyteindex based on init response length (RomRaider filtering)
+        val maxEcuByteIndex = when {
+            ecuInit == null -> Int.MAX_VALUE // No filtering
+            ecuInit.initResponseLength < 56 -> 255  // Up to D256
+            ecuInit.initResponseLength < 104 -> 487 // Up to D488
+            else -> Int.MAX_VALUE                    // All DTCs
+        }
+
+        val protocols = document.getElementsByTagName("protocol")
+        for (i in 0 until protocols.length) {
+            val protocol = protocols.item(i) as Element
+            if (protocol.getAttribute("id") == "SSM") {
+                val dtcodesSections = protocol.getElementsByTagName("dtcodes")
+                for (j in 0 until dtcodesSections.length) {
+                    val dtcodesSection = dtcodesSections.item(j) as Element
+                    val dtcNodes = dtcodesSection.childNodes
+                    for (k in 0 until dtcNodes.length) {
+                        val node = dtcNodes.item(k)
+                        if (node.nodeType == Node.ELEMENT_NODE && node.nodeName == "dtcode") {
+                            val dtc = parseDtcCode(node as Element, maxEcuByteIndex)
+                            if (dtc != null) {
+                                dtcCodes.add(dtc)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Timber.d("Parsed ${dtcCodes.size} DTC codes from XML")
+        return dtcCodes
+    }
+
+    /**
+     * Parse a single <dtcode> element.
+     */
+    private fun parseDtcCode(element: Element, maxEcuByteIndex: Int): SsmDtcCode? {
+        val id = element.getAttribute("id").takeIf { it.isNotEmpty() } ?: return null
+        val name = element.getAttribute("name").takeIf { it.isNotEmpty() } ?: return null
+        val tmpAddrStr = element.getAttribute("tmpaddr").takeIf { it.isNotEmpty() } ?: return null
+        val memAddrStr = element.getAttribute("memaddr").takeIf { it.isNotEmpty() } ?: return null
+        val bitStr = element.getAttribute("bit").takeIf { it.isNotEmpty() } ?: return null
+        val ecuByteIndexStr = element.getAttribute("ecubyteindex").takeIf { it.isNotEmpty() }
+
+        // Filter by ecubyteindex if present
+        if (ecuByteIndexStr != null) {
+            val ecuByteIndex = ecuByteIndexStr.toIntOrNull() ?: return null
+            if (ecuByteIndex > maxEcuByteIndex) return null
+        }
+
+        val tmpAddr = parseHexAddress(tmpAddrStr) ?: return null
+        val memAddr = parseHexAddress(memAddrStr) ?: return null
+        val bit = bitStr.toIntOrNull() ?: return null
+
+        return SsmDtcCode(
+            id = id,
+            name = name,
+            tmpAddr = tmpAddr,
+            memAddr = memAddr,
+            bit = bit
+        )
+    }
+
+    /**
      * Parse a hex address string like "0x00000E" to an integer.
      */
     private fun parseHexAddress(addressStr: String): Int? {
@@ -343,6 +422,14 @@ class SsmLoggerDefinitionParser(private val ecuInit: SsmEcuInit?) {
         ): List<SsmParameter> {
             val parser = SsmLoggerDefinitionParser(ecuInit)
             return parser.parse(inputStream, target)
+        }
+
+        fun parseDtcCodes(
+            inputStream: InputStream,
+            ecuInit: SsmEcuInit? = null
+        ): List<SsmDtcCode> {
+            val parser = SsmLoggerDefinitionParser(ecuInit)
+            return parser.parseDtcCodes(inputStream)
         }
     }
 }
