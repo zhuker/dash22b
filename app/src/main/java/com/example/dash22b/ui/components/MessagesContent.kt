@@ -95,9 +95,7 @@ fun MessagesContent() {
     }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .imePadding()
+        modifier = Modifier.fillMaxSize()
     ) {
         // Chat messages
         LazyColumn(
