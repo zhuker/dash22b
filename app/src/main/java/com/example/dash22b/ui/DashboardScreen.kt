@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -143,11 +144,14 @@ fun DashboardScreen() {
 
         if (isPortrait) {
             Column(
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize().then(
+                        if (currentMode == ScreenMode.MESSAGES) Modifier.imePadding() else Modifier
+                    )
                     /*.windowInsetsPadding(WindowInsets.safeDrawing)*/ ) { // Add padding for system
                 // bars
                 // Main Content
-                Box(modifier = Modifier.weight(1f).fillMaxWidth().padding(16.dp)) {
+                val contentPadding = if (currentMode == ScreenMode.MESSAGES) 0.dp else 16.dp
+                Box(modifier = Modifier.weight(1f).fillMaxWidth().padding(contentPadding)) {
                     when (currentMode) {
                         ScreenMode.GAUGES ->
                                 PortraitGaugesContent(
@@ -164,10 +168,12 @@ fun DashboardScreen() {
                 }
 
                 // Bottom Status Bar (Now stacked below content in Portrait)
-                BottomStatusBar(
-                        engineData = engineData,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                )
+                if (currentMode != ScreenMode.MESSAGES) {
+                    BottomStatusBar(
+                            engineData = engineData,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+                }
 
                 // Bottom Navigation
                 BottomNavigationBar(
@@ -186,7 +192,8 @@ fun DashboardScreen() {
                 NavigationSidebar(currentMode = currentMode, onModeSelected = { currentMode = it }, milActive = milActive)
 
                 // Main Content
-                Box(modifier = Modifier.weight(1f).fillMaxHeight().padding(16.dp)) {
+                val contentPadding = if (currentMode == ScreenMode.MESSAGES) 0.dp else 16.dp
+                Box(modifier = Modifier.weight(1f).fillMaxHeight().padding(contentPadding)) {
                     when (currentMode) {
                         ScreenMode.GAUGES ->
                                 GaugesContent(
@@ -202,10 +209,12 @@ fun DashboardScreen() {
                     }
 
                     // Bottom Status Bar
-                    BottomStatusBar(
-                            engineData = engineData,
-                            modifier = Modifier.align(Alignment.BottomCenter)
-                    )
+                    if (currentMode != ScreenMode.MESSAGES) {
+                        BottomStatusBar(
+                                engineData = engineData,
+                                modifier = Modifier.align(Alignment.BottomCenter)
+                        )
+                    }
                 }
             }
         }
