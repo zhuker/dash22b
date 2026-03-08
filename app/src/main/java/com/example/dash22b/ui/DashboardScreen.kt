@@ -103,13 +103,6 @@ fun DashboardScreen() {
     // State for Navigation
     var currentMode by remember { mutableStateOf(ScreenMode.GAUGES) }
 
-    // Reset DTC state when leaving Messages tab
-    LaunchedEffect(currentMode) {
-        if (currentMode != ScreenMode.MESSAGES) {
-            dtcRepository.resetToIdle()
-        }
-    }
-
     // State for parameter selection dialog
     var showDialogForId by remember { mutableStateOf<Int?>(null) }
 

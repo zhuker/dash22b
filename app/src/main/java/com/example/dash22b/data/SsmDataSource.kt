@@ -98,17 +98,6 @@ class SsmDataSource(private val context: Context,
     private val serialManager = SsmSerialManager(context)
     private val allParameters = parameterRegistry.getAllDefinitions()
 
-    // MIL switch - hardcoded because it may be filtered out by ECU init capability check
-    // (ecubyteindex=56 can exceed the hardcoded init response length)
-    private val milParameter = SsmParameter(
-        id = "S155",
-        name = SsmRepository.MIL_PARAM_NAME,
-        address = 0x000196,
-        length = 1,
-        expression = "bit:7",
-        unit = DisplayUnit.SWITCH
-    )
-
     // Parameter subscription - only poll these parameters
     private val _subscribedParams = MutableStateFlow<Set<String>>(emptySet())
 
@@ -138,12 +127,7 @@ class SsmDataSource(private val context: Context,
             emptyList()
         } else {
             // Filter to only subscribed parameters
-            val params = allParameters.filter { param -> subscribed.contains(param.name) }.map { it as SsmParameter }.toMutableList()
-            // Always include MIL if subscribed (may not be in registry due to capability filtering)
-            if (subscribed.contains(SsmRepository.MIL_PARAM_NAME) && params.none { it.name == SsmRepository.MIL_PARAM_NAME }) {
-                params.add(milParameter)
-            }
-            params
+            allParameters.filter { param -> subscribed.contains(param.name) }.map { it as SsmParameter }
         }
     }
 
