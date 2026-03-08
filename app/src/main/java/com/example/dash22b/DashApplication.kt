@@ -2,6 +2,10 @@ package com.example.dash22b
 
 import android.app.Application
 import android.util.Log
+import com.example.dash22b.data.SsmDataSource
+import com.example.dash22b.di.AppContainer
+import com.example.dash22b.obd.SsmSerialManager
+import com.example.dash22b.obd.SsmEcuInit
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.io.File
@@ -12,18 +16,75 @@ import java.util.Locale
 
 class DashApplication : Application() {
 
+    lateinit var appContainer: AppContainer
+        private set
+
+    companion object {
+        private val TAG_LOG_LEVELS = mapOf(
+            SsmDataSource.TAG to Log.WARN, // Only log WARN and ERROR for this noisy tag
+            SsmSerialManager.TAG to Log.INFO
+        )
+
+        /**
+         * Shared logic to determine if a tag/priority combo should be logged.
+         */
+        fun shouldLog(tag: String?, priority: Int): Boolean {
+            val minPriority = TAG_LOG_LEVELS[tag] ?: Log.VERBOSE
+            return priority >= minPriority
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
+
+        // Initialize dependency container
+        appContainer = AppContainer(this)
 
         // Rotate logs before initializing logging
         rotateLogs()
 
         if (BuildConfig.DEBUG) {
-            Timber.plant(Timber.DebugTree())
+            Timber.plant(FilteredDebugTree())
         }
         
         // Always plant FileLoggingTree (or you can condition it on DEBUG/RELEASE)
         Timber.plant(FileLoggingTree())
+        
+        // Attempt SSM ECU init on startup
+        tryEcuInit()
+    }
+    
+    private fun tryEcuInit() {
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO)
+        scope.launch {
+            Timber.i("Attempting SSM ECU init via USB serial...")
+            val ssm = SsmSerialManager(this@DashApplication)
+
+            if (ssm.connect()) {
+                val response = ssm.sendInit(target = 1) // ECU
+                if (response != null) {
+                    Timber.i("ECU responded! ROM ID: ${SsmEcuInit(response).getRomId()}")
+
+                    // TODO: Initialize ParameterRegistry from XML with ECU capability filtering
+                    // When serial cable is connected and ECU responds, we should:
+                    // 1. Create SsmEcuInit from response bytes (response already has this data)
+                    // 2. Load logger_METRIC_EN_v370.xml from assets
+                    // 3. Parse with ParameterRegistry.fromXml(xmlStream, ecuInit)
+                    // 4. Replace appContainer.parameterRegistry with the XML-based one
+                    //
+                    // Example:
+                    // val ecuInit = SsmEcuInit(response.toBytes())
+                    // val xmlStream = assets.open("logger_METRIC_EN_v370.xml")
+                    // val registry = ParameterRegistry.fromXml(xmlStream, ecuInit)
+                    // appContainer.updateParameterRegistry(registry)
+                } else {
+                    Timber.w("No valid response from ECU")
+                }
+                ssm.disconnect()
+            } else {
+                Timber.w("Could not connect to USB serial device (not plugged in or no permission)")
+            }
+        }
     }
 
     private fun rotateLogs() {
@@ -37,6 +98,12 @@ class DashApplication : Application() {
             } else {
                 Log.e("DashApplication", "Failed to rotate log file")
             }
+        }
+    }
+
+    private class FilteredDebugTree : Timber.DebugTree() {
+        override fun isLoggable(tag: String?, priority: Int): Boolean {
+            return shouldLog(tag, priority)
         }
     }
 
@@ -65,6 +132,10 @@ class DashApplication : Application() {
                     }
                 }
             }
+        }
+
+        override fun isLoggable(tag: String?, priority: Int): Boolean {
+            return true
         }
 
         override fun log(priority: Int, tag: String?, message: String, t: Throwable?) {

@@ -4,7 +4,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-object TpmsRepository {
+class TpmsRepository {
     private val _tpmsState = MutableStateFlow<Map<String, TpmsState>>(
         mapOf(
             "FL" to TpmsState(),
