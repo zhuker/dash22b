@@ -15,7 +15,7 @@ import com.example.dash22b.DashApplication
 import com.example.dash22b.MainActivity
 import com.example.dash22b.R
 import com.example.dash22b.data.DtcRepository
-import com.example.dash22b.data.DtcState
+import com.example.dash22b.data.ServiceRequest
 import com.example.dash22b.data.ParameterRegistry
 import com.example.dash22b.data.SsmDataSource
 import com.example.dash22b.data.SsmRepository
@@ -128,33 +128,52 @@ class DashService : Service() {
             }
         }
 
-        // Observe MIL status from engine data
-        serviceScope.launch {
-            ssmRepository.engineData.collect { data ->
-                val milValue = data.values[SsmRepository.MIL_PARAM_NAME]
-                if (milValue != null) {
-                    dtcRepository.updateMilStatus(milValue.value >= 1f)
-                }
-            }
-        }
+        // MIL status is determined by DTC read results, not the MIL switch parameter
+        // (address 0x000196 returns 0xFF on this ECU — unsupported memory)
 
-        // Observe DTC read requests from UI
+        // Observe service requests from UI (DTC read, clear codes)
         serviceScope.launch {
-            Timber.i("DTC read request observer started")
-            dtcRepository.readRequests.collect {
-                Timber.i("DTC read requested from UI")
-                try {
-                    val definitions = appContainer.dtcDefinitions
-                    val deferred = ssmDataSource.requestDtcRead(definitions)
-                    val results = deferred.await()
-                    dtcRepository.updateDtcState(
-                        DtcState.Loaded(results)
-                    )
-                } catch (e: Exception) {
-                    Timber.e(e, "DTC read failed")
-                    dtcRepository.updateDtcState(
-                        DtcState.Error(e.message ?: "Unknown error")
-                    )
+            Timber.i("Service request observer started")
+            dtcRepository.serviceRequests.collect { request ->
+                when (request) {
+                    is ServiceRequest.ReadDtc -> {
+                        Timber.i("DTC read requested from UI")
+                        try {
+                            val definitions = appContainer.dtcDefinitions
+                            val deferred = ssmDataSource.requestDtcRead(definitions)
+                            val results = deferred.await()
+                            dtcRepository.updateMilStatus(results.any { it.isTemporary })
+                            if (results.isEmpty()) {
+                                dtcRepository.addCarMessage("All systems normal. No trouble codes detected.")
+                            } else {
+                                dtcRepository.addCarMessage(
+                                    "${results.size} trouble code${if (results.size > 1) "s" else ""} found:",
+                                    dtcCodes = results
+                                )
+                            }
+                        } catch (e: Exception) {
+                            Timber.e(e, "DTC read failed")
+                            dtcRepository.addCarMessage("Error reading codes: ${e.message}")
+                        }
+                        dtcRepository.setLoading(false)
+                    }
+                    is ServiceRequest.ClearCodes -> {
+                        Timber.i("Clear codes requested from UI")
+                        try {
+                            val deferred = ssmDataSource.requestEcuReset()
+                            val success = deferred.await()
+                            if (success) {
+                                dtcRepository.updateMilStatus(false)
+                                dtcRepository.addCarMessage("Codes cleared. ECU reset successful.")
+                            } else {
+                                dtcRepository.addCarMessage("Failed to clear codes. ECU did not acknowledge the reset.")
+                            }
+                        } catch (e: Exception) {
+                            Timber.e(e, "Clear codes failed")
+                            dtcRepository.addCarMessage("Error clearing codes: ${e.message}")
+                        }
+                        dtcRepository.setLoading(false)
+                    }
                 }
             }
         }

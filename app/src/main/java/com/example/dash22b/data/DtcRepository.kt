@@ -8,38 +8,55 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 
-sealed class DtcState {
-    object Idle : DtcState()
-    object Loading : DtcState()
-    data class Loaded(val codes: List<SsmDtcCode>) : DtcState()
-    data class Error(val message: String) : DtcState()
+data class ChatMessage(
+    val text: String,
+    val isFromUser: Boolean,
+    val dtcCodes: List<SsmDtcCode> = emptyList(),
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+sealed class ServiceRequest {
+    object ReadDtc : ServiceRequest()
+    object ClearCodes : ServiceRequest()
 }
 
 class DtcRepository {
-    private val _dtcState = MutableStateFlow<DtcState>(DtcState.Idle)
-    val dtcState: StateFlow<DtcState> = _dtcState.asStateFlow()
+    private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
+    val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
 
     private val _milActive = MutableStateFlow(false)
     val milActive: StateFlow<Boolean> = _milActive.asStateFlow()
 
-    // Channel buffers the request until the service collects it
-    private val _readRequests = Channel<Unit>(Channel.BUFFERED)
-    val readRequests = _readRequests.receiveAsFlow()
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    fun requestDtcRead() {
-        Timber.i("DtcRepository: requestDtcRead called, trySend result=${_readRequests.trySend(Unit)}")
-        _dtcState.value = DtcState.Loading
+    // Channel buffers the request until the service collects it
+    private val _serviceRequests = Channel<ServiceRequest>(Channel.BUFFERED)
+    val serviceRequests = _serviceRequests.receiveAsFlow()
+
+    fun addUserMessage(text: String) {
+        _messages.value = _messages.value + ChatMessage(text = text, isFromUser = true)
     }
 
-    fun updateDtcState(state: DtcState) {
-        _dtcState.value = state
+    fun addCarMessage(text: String, dtcCodes: List<SsmDtcCode> = emptyList()) {
+        _messages.value = _messages.value + ChatMessage(text = text, isFromUser = false, dtcCodes = dtcCodes)
+    }
+
+    fun requestDtcRead() {
+        _isLoading.value = true
+        Timber.i("DtcRepository: requestDtcRead called, trySend result=${_serviceRequests.trySend(ServiceRequest.ReadDtc)}")
+    }
+
+    fun requestClearCodes() {
+        _isLoading.value = true
+        Timber.i("DtcRepository: requestClearCodes called, trySend result=${_serviceRequests.trySend(ServiceRequest.ClearCodes)}")
+    }
+
+    fun setLoading(loading: Boolean) {
+        _isLoading.value = loading
     }
 
     fun updateMilStatus(active: Boolean) {
         _milActive.value = active
-    }
-
-    fun resetToIdle() {
-        _dtcState.value = DtcState.Idle
     }
 }

@@ -24,10 +24,6 @@ class SsmRepository {
     }
 
     fun subscribeToParameters(params: Set<String>) {
-        _subscribedParams.value = params + MIL_PARAM_NAME
-    }
-
-    companion object {
-        const val MIL_PARAM_NAME = "Malfunction Indicator Light (MIL) ON Flag"
+        _subscribedParams.value = params
     }
 }

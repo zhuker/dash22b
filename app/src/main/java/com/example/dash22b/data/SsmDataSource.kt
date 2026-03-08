@@ -96,23 +96,15 @@ class SsmDataSource(private val context: Context,
     private val serialManager = SsmSerialManager(context)
     private val allParameters = parameterRegistry.getAllDefinitions()
 
-    // MIL switch - hardcoded because it may be filtered out by ECU init capability check
-    // (ecubyteindex=56 can exceed the hardcoded init response length)
-    private val milParameter = SsmParameter(
-        id = "S155",
-        name = SsmRepository.MIL_PARAM_NAME,
-        address = 0x000196,
-        length = 1,
-        expression = "bit:7",
-        unit = DisplayUnit.SWITCH
-    )
-
     // Parameter subscription - only poll these parameters
     private val _subscribedParams = MutableStateFlow<Set<String>>(emptySet())
 
     // Pending DTC read request (serialized with polling loop)
     private val pendingDtcRequest = AtomicReference<CompletableDeferred<List<SsmDtcCode>>?>(null)
     private var dtcDefinitions: List<SsmDtcCode> = emptyList()
+
+    // Pending ECU reset request (serialized with polling loop)
+    private val pendingResetRequest = AtomicReference<CompletableDeferred<Boolean>?>(null)
 
     /**
      * Subscribe to specific parameters by name.
@@ -133,12 +125,7 @@ class SsmDataSource(private val context: Context,
             emptyList()
         } else {
             // Filter to only subscribed parameters
-            val params = allParameters.filter { param -> subscribed.contains(param.name) }.map { it as SsmParameter }.toMutableList()
-            // Always include MIL if subscribed (may not be in registry due to capability filtering)
-            if (subscribed.contains(SsmRepository.MIL_PARAM_NAME) && params.none { it.name == SsmRepository.MIL_PARAM_NAME }) {
-                params.add(milParameter)
-            }
-            params
+            allParameters.filter { param -> subscribed.contains(param.name) }.map { it as SsmParameter }
         }
     }
 
@@ -150,6 +137,16 @@ class SsmDataSource(private val context: Context,
         val deferred = CompletableDeferred<List<SsmDtcCode>>()
         dtcDefinitions = definitions
         pendingDtcRequest.set(deferred)
+        return deferred
+    }
+
+    /**
+     * Request an ECU reset (clear codes) from the polling loop.
+     * Writes 0x40 to address 0x000060. Must be serialized with polling.
+     */
+    fun requestEcuReset(): CompletableDeferred<Boolean> {
+        val deferred = CompletableDeferred<Boolean>()
+        pendingResetRequest.set(deferred)
         return deferred
     }
 
@@ -291,6 +288,21 @@ class SsmDataSource(private val context: Context,
                             if (e is CancellationException) throw e
                             Timber.tag(TAG).e(e, "DTC read failed")
                             dtcDeferred.complete(emptyList())
+                        }
+                    }
+
+                    // Check for pending ECU reset request
+                    val resetDeferred = pendingResetRequest.getAndSet(null)
+                    if (resetDeferred != null) {
+                        Timber.tag(TAG).i("Servicing ECU reset request")
+                        try {
+                            val success = serialManager.writeAddress(0x000060, 0x40.toByte())
+                            resetDeferred.complete(success)
+                            Timber.tag(TAG).i("ECU reset ${if (success) "successful" else "failed"}")
+                        } catch (e: Exception) {
+                            if (e is CancellationException) throw e
+                            Timber.tag(TAG).e(e, "ECU reset failed")
+                            resetDeferred.complete(false)
                         }
                     }
 

@@ -23,7 +23,9 @@ data class SsmPacket(
         const val SOURCE_DIAG: Int = 0xF0
         const val CMD_INIT: Byte = 0xBF.toByte()
         const val CMD_READ_ADDRESS: Byte = 0xA8.toByte()
+        const val CMD_WRITE_ADDRESS: Byte = 0xB8.toByte()
         const val RSP_READ_ADDRESS: Byte = 0xE8.toByte()
+        const val RSP_WRITE_ADDRESS: Byte = 0xF8.toByte()
         
         /**
          * Creates an ECU/TCU init request packet.
