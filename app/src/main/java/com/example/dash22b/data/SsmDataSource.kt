@@ -75,6 +75,8 @@ class SsmDataSource(private val context: Context,
                     // Apply conversion expression
                     val convertedValue = SsmExpressionEvaluator.evaluate(param.expression, rawValue)
 
+                    Timber.tag(TAG).v("${param.name}: raw=$rawValue expr='${param.expression}' -> $convertedValue ${param.unit} (len=${param.length} storage=${param.storageType})")
+
                     // Store with original SSM unit
                     dynamicValues[param.name] = ValueWithUnit(convertedValue, param.unit)
 
