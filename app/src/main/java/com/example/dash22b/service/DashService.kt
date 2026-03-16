@@ -30,6 +30,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -47,6 +48,9 @@ class DashService : Service() {
     private lateinit var parameterRegistry: ParameterRegistry
     private lateinit var dtcRepository: DtcRepository
     private lateinit var appContainer: com.example.dash22b.di.AppContainer
+
+    // Current BLE scan cycle job — cancelled to force immediate rescan
+    private var tpmsScanCycleJob: Job? = null
 
     // Local mutable state for TPMS
     private val currentTpmsMap = mutableMapOf<String, TpmsState>(
@@ -182,25 +186,60 @@ class DashService : Service() {
     // ==================== TPMS ====================
 
     private fun startTpmsScanning() {
+        val app = application as DashApplication
+
         serviceScope.launch {
             while (isActive) {
-                Timber.d("Starting periodic BLE scan")
-                val scanJob = launch {
-                    tpmsDataSource.getTpmsUpdates()
-                        .collect { update ->
-                            synchronized(currentTpmsMap) {
-                                currentTpmsMap[update.position] = update.state
-                                // Update Repository
-                                tpmsRepository.updateState(currentTpmsMap.toMap())
-                                updateNotification()
-                            }
-                        }
+                val allStale = synchronized(currentTpmsMap) {
+                    currentTpmsMap.values.any { it.timestamp > 0 } &&
+                        currentTpmsMap.values.all { it.isStale }
                 }
-                // Restart scan every 2 minutes to avoid Android "30 minutes max" throttle
-                // and other manufacturer-specific aggressive battery optimizations for background BLE
-                delay(RESCAN_DELAY_MS)
-                scanJob.cancel()
-                Timber.d("Stopping periodic BLE scan (timeout reached)")
+
+                if (allStale && !app.isInForeground.value) {
+                    Timber.d("TPMS sensors stale, app in background — pausing BLE scan")
+                    app.isInForeground.first { it }
+                    Timber.d("App foregrounded — resuming BLE scan")
+                }
+
+                val scanMode = if (app.isInForeground.value)
+                    android.bluetooth.le.ScanSettings.SCAN_MODE_LOW_LATENCY
+                else
+                    android.bluetooth.le.ScanSettings.SCAN_MODE_BALANCED
+
+                Timber.d("Starting BLE scan (mode=${if (scanMode == android.bluetooth.le.ScanSettings.SCAN_MODE_LOW_LATENCY) "LOW_LATENCY" else "BALANCED"})")
+
+                // Run one scan cycle — collected into tpmsScanCycleJob so foreground
+                // transitions can cancel it to force an immediate restart
+                tpmsScanCycleJob = launch {
+                    val scanJob = launch {
+                        tpmsDataSource.getTpmsUpdates(scanMode)
+                            .collect { update ->
+                                synchronized(currentTpmsMap) {
+                                    currentTpmsMap[update.position] = update.state
+                                    tpmsRepository.updateState(currentTpmsMap.toMap())
+                                    updateNotification()
+                                }
+                            }
+                    }
+                    // Restart scan every 2 minutes to avoid Android BLE throttling
+                    delay(RESCAN_DELAY_MS)
+                    scanJob.cancel()
+                }
+                tpmsScanCycleJob?.join()
+                Timber.d("BLE scan cycle ended")
+            }
+        }
+
+        // When app comes to foreground, cancel current scan cycle to force
+        // immediate restart with LOW_LATENCY mode
+        serviceScope.launch {
+            var wasForeground = app.isInForeground.value
+            app.isInForeground.collect { foreground ->
+                if (foreground && !wasForeground) {
+                    Timber.d("Foreground transition — triggering immediate TPMS rescan")
+                    tpmsScanCycleJob?.cancel()
+                }
+                wasForeground = foreground
             }
         }
     }
