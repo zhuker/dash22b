@@ -21,7 +21,7 @@ class TpmsDataSource(private val context: Context) {
     private val adapter: BluetoothAdapter? = bluetoothManager?.adapter
 
     @SuppressLint("MissingPermission")
-    fun getTpmsUpdates(): Flow<TpmsUpdate> = callbackFlow {
+    fun getTpmsUpdates(scanMode: Int = android.bluetooth.le.ScanSettings.SCAN_MODE_BALANCED): Flow<TpmsUpdate> = callbackFlow {
         if (adapter == null || !adapter.isEnabled) {
             Timber.e("Bluetooth not supported or disabled")
             close()
@@ -88,7 +88,7 @@ class TpmsDataSource(private val context: Context) {
 
         try {
             val settings = android.bluetooth.le.ScanSettings.Builder()
-                .setScanMode(android.bluetooth.le.ScanSettings.SCAN_MODE_BALANCED)
+                .setScanMode(scanMode)
                 .build()
             
             // Filter for Manufacturer ID 0x0100 (256)

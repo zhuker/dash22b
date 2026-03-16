@@ -1,11 +1,16 @@
 package com.example.dash22b
 
+import android.app.Activity
 import android.app.Application
+import android.os.Bundle
 import android.util.Log
 import com.example.dash22b.data.SsmDataSource
 import com.example.dash22b.di.AppContainer
 import com.example.dash22b.obd.SsmSerialManager
 import com.example.dash22b.obd.SsmEcuInit
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.io.File
@@ -18,6 +23,11 @@ class DashApplication : Application() {
 
     lateinit var appContainer: AppContainer
         private set
+
+    private val _isInForeground = MutableStateFlow(false)
+    val isInForeground: StateFlow<Boolean> = _isInForeground.asStateFlow()
+
+    private var startedActivityCount = 0
 
     companion object {
         private val TAG_LOG_LEVELS = mapOf(
@@ -50,6 +60,25 @@ class DashApplication : Application() {
         // Always plant FileLoggingTree (or you can condition it on DEBUG/RELEASE)
         Timber.plant(FileLoggingTree())
         
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityStarted(activity: Activity) {
+                startedActivityCount++
+                _isInForeground.value = true
+            }
+            override fun onActivityStopped(activity: Activity) {
+                startedActivityCount--
+                if (startedActivityCount <= 0) {
+                    startedActivityCount = 0
+                    _isInForeground.value = false
+                }
+            }
+            override fun onActivityCreated(a: Activity, b: Bundle?) {}
+            override fun onActivityResumed(a: Activity) {}
+            override fun onActivityPaused(a: Activity) {}
+            override fun onActivitySaveInstanceState(a: Activity, b: Bundle) {}
+            override fun onActivityDestroyed(a: Activity) {}
+        })
+
         // Attempt SSM ECU init on startup
         tryEcuInit()
     }
