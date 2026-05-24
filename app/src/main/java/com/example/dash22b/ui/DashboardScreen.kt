@@ -28,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -430,6 +431,28 @@ fun NavItem(
     }
 }
 
+/**
+ * EMA low-pass filter as Compose state. Seeds from the first observed value so
+ * the gauge doesn't crawl from 0; subsequent ticks blend in via
+ * [com.example.dash22b.data.ParameterCalibration.FUEL_SMOOTHING_ALPHA].
+ * The [key] resets the filter — pass parameter+unit so switching units starts
+ * fresh rather than carrying residual from the previous calibration.
+ */
+@Composable
+private fun rememberSmoothed(value: Float, key: Any): Float {
+    val state = remember(key) { mutableFloatStateOf(Float.NaN) }
+    LaunchedEffect(value, key) {
+        val prev = state.floatValue
+        state.floatValue = if (prev.isNaN()) {
+            value
+        } else {
+            val a = com.example.dash22b.data.ParameterCalibration.FUEL_SMOOTHING_ALPHA
+            a * value + (1f - a) * prev
+        }
+    }
+    return if (state.floatValue.isNaN()) value else state.floatValue
+}
+
 @Composable
 fun DynamicCircularGauge(
         config: GaugeConfig,
@@ -475,10 +498,17 @@ fun DynamicCircularGauge(
     val calibrated = com.example.dash22b.data.ParameterCalibration.convert(
         def?.name, vwu.value, vwu.unit, targetUnit
     )
-    val displayValue = if (calibrated != null) {
+    val rawDisplay = if (calibrated != null) {
         com.example.dash22b.data.ValueWithUnit(calibrated, targetUnit)
     } else {
         vwu.to(targetUnit)
+    }
+    val displayValue = if (
+        com.example.dash22b.data.ParameterCalibration.shouldSmooth(def?.name, targetUnit)
+    ) {
+        rawDisplay.copy(value = rememberSmoothed(rawDisplay.value, "${def?.name}-$targetUnit"))
+    } else {
+        rawDisplay
     }
 
     // Fallbacks if not found
@@ -661,26 +691,46 @@ fun DynamicLineGraph(
 
     // Get history and convert units if needed
     val rawHistory = history.getHistory(key)
-    val convertedHistory = if (vwu.unit != targetUnit && rawHistory.isNotEmpty()) {
-        rawHistory.map { UnitConverter.convert(it, vwu.unit, targetUnit) }
-    } else {
+    val convertedHistory = if (rawHistory.isEmpty() || vwu.unit == targetUnit) {
         rawHistory
+    } else {
+        rawHistory.map { v ->
+            com.example.dash22b.data.ParameterCalibration.convert(def?.name, v, vwu.unit, targetUnit)
+                ?: UnitConverter.convert(v, vwu.unit, targetUnit)
+        }
     }
 
     // Convert current value
-    val displayValue = UnitConverter.convert(vwu.value, vwu.unit, targetUnit)
+    val currentConverted = com.example.dash22b.data.ParameterCalibration.convert(
+        def?.name, vwu.value, vwu.unit, targetUnit
+    ) ?: UnitConverter.convert(vwu.value, vwu.unit, targetUnit)
+
+    // Low-pass filter when displaying calibrated fuel units; keep raw voltage unfiltered.
+    val smoothing = com.example.dash22b.data.ParameterCalibration.shouldSmooth(def?.name, targetUnit)
+    val finalHistory = if (smoothing) {
+        com.example.dash22b.data.ParameterCalibration.smoothSeries(convertedHistory)
+    } else {
+        convertedHistory
+    }
+    val displayValue = if (smoothing) {
+        finalHistory.lastOrNull() ?: currentConverted
+    } else {
+        currentConverted
+    }
 
     // Use parameter name as label
     val label_ = def?.name ?: key
     val label = label_.split(" ").firstOrNull() ?: label_
 
     LineGraph(
-            dataPoints = convertedHistory,
+            dataPoints = finalHistory,
             label = label,
             unit = targetUnit,
             currentValue = displayValue,
             color = color,
-            modifier = modifier
+            modifier = modifier,
+            minY = parameterRegistry.getMinExpected(def, targetUnit),
+            maxY = parameterRegistry.getMaxExpected(def, targetUnit)
     )
 }
 

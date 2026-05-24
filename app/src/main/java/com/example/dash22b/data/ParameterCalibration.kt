@@ -64,4 +64,31 @@ object ParameterCalibration {
             else -> null
         }
     }
+
+    /**
+     * EMA smoothing factor for jittery sensor readings.
+     * Lower = more smoothing. Tank level changes slowly so heavy smoothing is fine.
+     */
+    const val FUEL_SMOOTHING_ALPHA = 0.1f
+
+    /**
+     * Whether the displayed value for this parameter+unit benefits from low-pass
+     * filtering. The raw voltage should remain unfiltered so the sensor's true
+     * jitter is visible for debugging; the calibrated gallons/percent views get
+     * smoothed because the cubic amplifies that jitter into noticeable wobble.
+     */
+    fun shouldSmooth(paramName: String?, targetUnit: DisplayUnit): Boolean {
+        if (paramName != FUEL_LEVEL_PARAM) return false
+        return targetUnit == DisplayUnit.GALLONS ||
+            targetUnit == DisplayUnit.GALLONS_TO_FILL ||
+            targetUnit == DisplayUnit.PERCENT
+    }
+
+    /** Apply [FUEL_SMOOTHING_ALPHA] EMA over a series, seeding from the first sample. */
+    fun smoothSeries(values: List<Float>): List<Float> {
+        if (values.isEmpty()) return values
+        val a = FUEL_SMOOTHING_ALPHA
+        var s = values.first()
+        return values.map { v -> s = a * v + (1f - a) * s; s }
+    }
 }
