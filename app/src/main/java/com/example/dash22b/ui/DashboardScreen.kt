@@ -110,8 +110,14 @@ fun DashboardScreen() {
     var showPresetSheet by remember { mutableStateOf(false) }
 
     // Parameter selection bottom sheet
+    val currentGaugeConfig = showDialogForId?.let { id ->
+        gaugeConfigs.firstOrNull { it.id == id }
+    }
     ParameterBottomSheet(
             isVisible = showDialogForId != null,
+            currentParamName = currentGaugeConfig?.parameterName
+                ?.takeIf { it != GAUGE_DISABLED_PARAM },
+            currentUnitName = currentGaugeConfig?.displayUnitName,
             onDismiss = { showDialogForId = null },
             onParameterSelected = { newParam, newUnit ->
                 presetManager.updateGaugeConfig(showDialogForId!!, newParam, newUnit)
@@ -466,7 +472,14 @@ fun DynamicCircularGauge(
     // Otherwise use the log unit.
     val targetUnit = config.getDisplayUnit() ?: def?.unit ?: vwu.unit
 
-    val displayValue = vwu.to(targetUnit)
+    val calibrated = com.example.dash22b.data.ParameterCalibration.convert(
+        def?.name, vwu.value, vwu.unit, targetUnit
+    )
+    val displayValue = if (calibrated != null) {
+        com.example.dash22b.data.ValueWithUnit(calibrated, targetUnit)
+    } else {
+        vwu.to(targetUnit)
+    }
 
     // Fallbacks if not found
     val label = def?.name ?: key

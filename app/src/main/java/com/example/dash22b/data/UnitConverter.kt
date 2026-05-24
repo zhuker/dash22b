@@ -33,6 +33,8 @@ enum class DisplayUnit(vararg val names: String) {
     RPM("rpm"),
     PERCENT("%", "percent", "absolute %"),
     VOLTS("V", "Volts"),
+    GALLONS("gal"),
+    GALLONS_TO_FILL("gal to fill"),
     MILLIAMPS("mA"),
     OHM("ohm"),
     MILLISECONDS("ms"),

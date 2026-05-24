@@ -178,6 +178,7 @@ class ParameterRegistry private constructor(
 
     fun getMinExpected(def: ParameterDefinition?, targetUnit: DisplayUnit): Float {
         if (def == null) return 0f
+        ParameterCalibration.getRange(def.name, targetUnit)?.let { return it.first }
         if (!minMaxMap.containsKey(def.name)) {
 //            Timber.w("oops cant find minmax for '${def.name}'")
             if (def.unit == DisplayUnit.VOLTS) {
@@ -189,6 +190,7 @@ class ParameterRegistry private constructor(
     }
     fun getMaxExpected(def: ParameterDefinition?, targetUnit: DisplayUnit): Float {
         if (def == null) return 100f
+        ParameterCalibration.getRange(def.name, targetUnit)?.let { return it.second }
         if (!minMaxMap.containsKey(def.name)) {
 //            Timber.w("oops cant find minmax for '${def.name}'")
             if (def.unit == DisplayUnit.VOLTS) {

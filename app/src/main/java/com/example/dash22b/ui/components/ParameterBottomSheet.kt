@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.example.dash22b.data.DisplayUnit
+import com.example.dash22b.data.ParameterCalibration
 import com.example.dash22b.data.ParameterDefinition
 import com.example.dash22b.data.PresetManager.Companion.GAUGE_DISABLED_PARAM
 import com.example.dash22b.di.LocalParameterRegistry
@@ -47,16 +48,37 @@ import com.example.dash22b.ui.theme.DashboardDarkBg
 fun ParameterBottomSheet(
     isVisible: Boolean,
     onDismiss: () -> Unit,
-    onParameterSelected: (String, String?) -> Unit
+    onParameterSelected: (String, String?) -> Unit,
+    currentParamName: String? = null,
+    currentUnitName: String? = null
 ) {
     if (!isVisible) return
 
     val parameterRegistry = LocalParameterRegistry.current
     var searchQuery by remember { mutableStateOf("") }
-    
-    // Selection state
-    var selectedParam by remember { mutableStateOf<ParameterDefinition?>(null) }
-    var selectedUnit by remember { mutableStateOf<DisplayUnit?>(null) }
+
+    // Pre-select the gauge's current parameter and unit so the user can change
+    // the unit in one tap without re-picking the parameter from the list.
+    val initialParam = remember(currentParamName, parameterRegistry) {
+        currentParamName?.let { parameterRegistry.getDefinition(it) }
+    }
+    val initialUnit = remember(currentParamName, currentUnitName) {
+        currentUnitName?.let {
+            try {
+                DisplayUnit.valueOf(it)
+            } catch (e: IllegalArgumentException) {
+                null
+            }
+        }
+    }
+
+    // Selection state — re-seeded when the sheet is opened for a different gauge.
+    var selectedParam by remember(initialParam) {
+        mutableStateOf<ParameterDefinition?>(initialParam)
+    }
+    var selectedUnit by remember(initialParam, initialUnit) {
+        mutableStateOf<DisplayUnit?>(initialUnit)
+    }
     var dropdownExpanded by remember { mutableStateOf(false) }
 
     val allOptions = remember(parameterRegistry) { parameterRegistry.getAllDefinitions() }
@@ -115,7 +137,13 @@ fun ParameterBottomSheet(
                     ) {
                         Text(text = "Unit:", color = Color.Gray)
 
-                        val compatibleUnits = selectedParam!!.unit.getCompatibleUnits()
+                        val compatibleUnits = (
+                            selectedParam!!.unit.getCompatibleUnits() +
+                                ParameterCalibration.getExtraUnits(
+                                    selectedParam!!.name,
+                                    selectedParam!!.unit
+                                )
+                        ).distinct()
                         if (compatibleUnits.size > 1) {
                             Box {
                                 OutlinedButton(
