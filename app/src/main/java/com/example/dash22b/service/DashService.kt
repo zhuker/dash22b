@@ -17,6 +17,7 @@ import com.example.dash22b.R
 import com.example.dash22b.data.DtcRepository
 import com.example.dash22b.data.ServiceRequest
 import com.example.dash22b.data.ParameterRegistry
+import com.example.dash22b.data.MonitorCsvWriter
 import com.example.dash22b.data.SsmDataSource
 import com.example.dash22b.data.SsmRepository
 import com.example.dash22b.data.TpmsDataSource
@@ -44,6 +45,7 @@ class DashService : Service() {
 
     // SSM ECU
     private lateinit var ssmDataSource: SsmDataSource
+    private lateinit var monitorCsvWriter: MonitorCsvWriter
     private lateinit var ssmRepository: SsmRepository
     private lateinit var parameterRegistry: ParameterRegistry
     private lateinit var dtcRepository: DtcRepository
@@ -88,6 +90,7 @@ class DashService : Service() {
         ssmRepository = appContainer.ssmRepository
         parameterRegistry = appContainer.parameterRegistry
         ssmDataSource = SsmDataSource(this, parameterRegistry)
+        monitorCsvWriter = MonitorCsvWriter(getExternalFilesDir(null) ?: filesDir)
         dtcRepository = appContainer.dtcRepository
 
         startTpmsScanning()
@@ -128,6 +131,7 @@ class DashService : Service() {
         // Collect engine data and push to repository
         serviceScope.launch {
             ssmDataSource.getEngineData().collect { engineData ->
+                monitorCsvWriter.record(engineData)
                 ssmRepository.updateEngineData(engineData)
             }
         }
@@ -357,7 +361,10 @@ class DashService : Service() {
     }
 
     override fun onDestroy() {
-        super.onDestroy()
+        if (::monitorCsvWriter.isInitialized) {
+            monitorCsvWriter.close()
+        }
         serviceScope.cancel()
+        super.onDestroy()
     }
 }
