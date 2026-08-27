@@ -39,7 +39,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.example.dash22b.data.DisplayUnit
 import com.example.dash22b.data.EngineData
-import com.example.dash22b.data.EngineDataHistory
 import com.example.dash22b.data.GaugeConfig
 import com.example.dash22b.data.PresetManager.Companion.GAUGE_DISABLED_PARAM
 import com.example.dash22b.data.PresetState
@@ -51,6 +50,10 @@ import com.example.dash22b.di.LocalSsmRepository
 import com.example.dash22b.di.LocalTpmsRepository
 import com.example.dash22b.service.DashService
 import com.example.dash22b.ui.components.CircularGauge
+import com.example.dash22b.data.history.HistoryStore
+import com.example.dash22b.data.history.SeriesBuffer
+import com.example.dash22b.data.history.convertInto
+import com.example.dash22b.di.LocalHistoryStore
 import com.example.dash22b.ui.components.LineGraph
 import com.example.dash22b.ui.components.MessagesContent
 import com.example.dash22b.ui.components.ParameterBottomSheet
@@ -74,12 +77,19 @@ enum class ScreenMode {
     MESSAGES
 }
 
+/** Bucket count per graph: roughly one per pixel of a 3-wide grid on this display. */
+private const val GRAPH_BUCKETS = 480
+
+/** Live graph window. The store retains ~20 min; graphs show the last 5. */
+private const val GRAPH_WINDOW_MS = 5 * 60 * 1000L
+
 @Composable
 fun DashboardScreen() {
     // SSM data from service via repository
     val ssmRepository = LocalSsmRepository.current
     val engineDataRaw by ssmRepository.engineData.collectAsState()
-    val history by ssmRepository.history.collectAsState()
+    val historyStore = LocalHistoryStore.current
+    val historyVersion by historyStore.version.collectAsState()
 
     // Use Repository for TPMS data (populated by Background Service)
     val tpmsRepository = LocalTpmsRepository.current
@@ -168,7 +178,7 @@ fun DashboardScreen() {
                                         onGaugeLongClick = { id -> showDialogForId = id },
                                         onPresetClick = { showPresetSheet = true }
                                 )
-                        ScreenMode.GRAPHS -> GraphsContent(engineData, history, gaugeConfigs)
+                        ScreenMode.GRAPHS -> GraphsContent(engineData, historyStore, historyVersion, gaugeConfigs)
                         ScreenMode.OTHER -> OtherContent(engineData)
                         ScreenMode.MESSAGES -> MessagesContent()
                     }
@@ -210,7 +220,7 @@ fun DashboardScreen() {
                                         onGaugeLongClick = { id -> showDialogForId = id },
                                         onPresetClick = { showPresetSheet = true }
                                 )
-                        ScreenMode.GRAPHS -> GraphsContent(engineData, history, gaugeConfigs)
+                        ScreenMode.GRAPHS -> GraphsContent(engineData, historyStore, historyVersion, gaugeConfigs)
                         ScreenMode.OTHER -> OtherContent(engineData)
                         ScreenMode.MESSAGES -> MessagesContent()
                     }
@@ -658,7 +668,8 @@ fun GaugesContent(
 fun DynamicLineGraph(
         config: GaugeConfig,
         data: EngineData,
-        history: EngineDataHistory,
+        store: HistoryStore,
+        version: Long,
         color: Color,
         modifier: Modifier = Modifier
 ) {
@@ -667,7 +678,7 @@ fun DynamicLineGraph(
     // Handle disabled gauge - show placeholder graph
     if (config.parameterName == GAUGE_DISABLED_PARAM) {
         LineGraph(
-                dataPoints = emptyList(),
+                series = remember { SeriesBuffer(1) },
                 label = "—",
                 unit = DisplayUnit.UNKNOWN,
                 currentValue = 0f,
@@ -689,15 +700,20 @@ fun DynamicLineGraph(
     // Determine target unit (config override → definition default → data unit)
     val targetUnit = config.getDisplayUnit() ?: def?.unit ?: vwu.unit
 
-    // Get history and convert units if needed
-    val rawHistory = history.getHistory(key)
-    val convertedHistory = if (rawHistory.isEmpty() || vwu.unit == targetUnit) {
-        rawHistory
-    } else {
-        rawHistory.map { v ->
-            com.example.dash22b.data.ParameterCalibration.convert(def?.name, v, vwu.unit, targetUnit)
-                ?: UnitConverter.convert(v, vwu.unit, targetUnit)
-        }
+    // Two buffers: `raw` holds stored source units, `display` the converted copy.
+    // Converting in place would compound on every recomposition.
+    val raw = remember { SeriesBuffer(GRAPH_BUCKETS) }
+    val display = remember { SeriesBuffer(GRAPH_BUCKETS) }
+
+    // targetUnit is part of the conversion key: without it, toggling a gauge's unit
+    // with the engine off would keep drawing the old unit until the next sample.
+    val revision = remember(version, key) {
+        store.queryLatest(key, GRAPH_WINDOW_MS, raw)
+        version
+    }
+    val displayRevision = remember(revision, targetUnit, def) {
+        convertInto(raw, display, def, targetUnit)
+        revision
     }
 
     // Convert current value
@@ -705,15 +721,11 @@ fun DynamicLineGraph(
         def?.name, vwu.value, vwu.unit, targetUnit
     ) ?: UnitConverter.convert(vwu.value, vwu.unit, targetUnit)
 
-    // Low-pass filter when displaying calibrated fuel units; keep raw voltage unfiltered.
+    // Smoothed series lags the instantaneous reading, so show its latest bucket
+    // instead of the raw current value when smoothing is active.
     val smoothing = com.example.dash22b.data.ParameterCalibration.shouldSmooth(def?.name, targetUnit)
-    val finalHistory = if (smoothing) {
-        com.example.dash22b.data.ParameterCalibration.smoothSeries(convertedHistory)
-    } else {
-        convertedHistory
-    }
     val displayValue = if (smoothing) {
-        finalHistory.lastOrNull() ?: currentConverted
+        display.lastFinite() ?: currentConverted
     } else {
         currentConverted
     }
@@ -723,21 +735,31 @@ fun DynamicLineGraph(
     val label = label_.split(" ").firstOrNull() ?: label_
 
     LineGraph(
-            dataPoints = finalHistory,
+            series = display,
             label = label,
             unit = targetUnit,
             currentValue = displayValue,
             color = color,
             modifier = modifier,
             minY = parameterRegistry.getMinExpected(def, targetUnit),
-            maxY = parameterRegistry.getMaxExpected(def, targetUnit)
+            maxY = parameterRegistry.getMaxExpected(def, targetUnit),
+            revision = displayRevision
     )
+}
+
+private fun SeriesBuffer.lastFinite(): Float? {
+    for (i in count - 1 downTo 0) {
+        val v = mean[i]
+        if (!v.isNaN()) return v
+    }
+    return null
 }
 
 @Composable
 fun GraphsContent(
         data: EngineData,
-        history: EngineDataHistory,
+        store: HistoryStore,
+        version: Long,
         gaugeConfigs: List<GaugeConfig>
 ) {
     // Graph colors cycle by column: Green, Teal, Orange
@@ -756,7 +778,8 @@ fun GraphsContent(
                     DynamicLineGraph(
                             config = config,
                             data = data,
-                            history = history,
+                            store = store,
+                            version = version,
                             color = colors[columnIndex],
                             modifier = Modifier.weight(1f).padding(4.dp)
                     )

@@ -8,6 +8,7 @@ import com.example.dash22b.data.PresetManager
 import com.example.dash22b.data.PresetRepository
 import com.example.dash22b.data.DtcRepository
 import com.example.dash22b.data.SsmRepository
+import com.example.dash22b.data.history.HistoryStore
 import com.example.dash22b.data.TpmsRepository
 import com.example.dash22b.obd.SsmDtcCode
 import com.example.dash22b.obd.SsmEcuInit
@@ -54,6 +55,12 @@ class AppContainer(context: Context) {
 
     val ssmRepository: SsmRepository by lazy {
         SsmRepository()
+    }
+
+    // Lives here rather than in DashService so graph history survives a service
+    // restart, and so the UI can read it directly.
+    val historyStore: HistoryStore by lazy {
+        HistoryStore()
     }
 
     val dtcRepository: DtcRepository by lazy {

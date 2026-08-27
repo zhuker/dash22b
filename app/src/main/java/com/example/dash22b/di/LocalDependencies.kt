@@ -1,6 +1,7 @@
 package com.example.dash22b.di
 
 import androidx.compose.runtime.staticCompositionLocalOf
+import com.example.dash22b.data.history.HistoryStore
 import com.example.dash22b.data.DtcRepository
 import com.example.dash22b.data.ParameterRegistry
 import com.example.dash22b.data.PresetManager
@@ -28,4 +29,8 @@ val LocalSsmRepository = staticCompositionLocalOf<SsmRepository> {
 
 val LocalDtcRepository = staticCompositionLocalOf<DtcRepository> {
     error("DtcRepository not provided. Wrap your content with CompositionLocalProvider.")
+}
+
+val LocalHistoryStore = staticCompositionLocalOf<HistoryStore> {
+    error("No HistoryStore provided")
 }

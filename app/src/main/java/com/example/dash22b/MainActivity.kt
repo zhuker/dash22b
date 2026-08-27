@@ -21,6 +21,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import androidx.compose.runtime.CompositionLocalProvider
 import com.example.dash22b.di.LocalDtcRepository
+import com.example.dash22b.di.LocalHistoryStore
 import com.example.dash22b.di.LocalParameterRegistry
 import com.example.dash22b.di.LocalPresetManager
 import com.example.dash22b.di.LocalSsmRepository
@@ -95,6 +96,7 @@ class MainActivity : ComponentActivity() {
                 LocalTpmsRepository provides container.tpmsRepository,
                 LocalPresetManager provides container.presetManager,
                 LocalSsmRepository provides container.ssmRepository,
+                LocalHistoryStore provides container.historyStore,
                 LocalDtcRepository provides container.dtcRepository
             ) {
                 Dash22bTheme {

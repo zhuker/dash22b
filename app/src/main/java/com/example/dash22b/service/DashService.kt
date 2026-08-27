@@ -23,6 +23,7 @@ import com.example.dash22b.data.SsmRepository
 import com.example.dash22b.data.TpmsDataSource
 import com.example.dash22b.data.TpmsRepository
 import com.example.dash22b.data.TpmsState
+import com.example.dash22b.data.history.HistoryStore
 import timber.log.Timber
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -47,6 +48,7 @@ class DashService : Service() {
     private lateinit var ssmDataSource: SsmDataSource
     private lateinit var monitorCsvWriter: MonitorCsvWriter
     private lateinit var ssmRepository: SsmRepository
+    private lateinit var historyStore: HistoryStore
     private lateinit var parameterRegistry: ParameterRegistry
     private lateinit var dtcRepository: DtcRepository
     private lateinit var appContainer: com.example.dash22b.di.AppContainer
@@ -88,6 +90,7 @@ class DashService : Service() {
 
         // SSM setup
         ssmRepository = appContainer.ssmRepository
+        historyStore = appContainer.historyStore
         parameterRegistry = appContainer.parameterRegistry
         ssmDataSource = SsmDataSource(this, parameterRegistry)
         monitorCsvWriter = MonitorCsvWriter(getExternalFilesDir(null) ?: filesDir)
@@ -132,6 +135,7 @@ class DashService : Service() {
         serviceScope.launch {
             ssmDataSource.getEngineData().collect { engineData ->
                 monitorCsvWriter.record(engineData)
+                historyStore.record(engineData)
                 ssmRepository.updateEngineData(engineData)
             }
         }
