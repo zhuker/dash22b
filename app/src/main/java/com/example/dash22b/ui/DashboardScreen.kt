@@ -31,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,6 +55,8 @@ import com.example.dash22b.data.history.HistoryStore
 import com.example.dash22b.data.history.SeriesBuffer
 import com.example.dash22b.data.history.convertInto
 import com.example.dash22b.di.LocalHistoryStore
+import com.example.dash22b.ui.components.GraphWindow
+import com.example.dash22b.ui.components.GraphWindowSelector
 import com.example.dash22b.ui.components.LineGraph
 import com.example.dash22b.ui.components.MessagesContent
 import com.example.dash22b.ui.components.ParameterBottomSheet
@@ -80,14 +83,15 @@ enum class ScreenMode {
 /** Bucket count per graph: roughly one per pixel of a 3-wide grid on this display. */
 private const val GRAPH_BUCKETS = 480
 
-/** Live graph window. The store retains ~20 min; graphs show the last 5. */
-private const val GRAPH_WINDOW_MS = 5 * 60 * 1000L
-
 @Composable
 fun DashboardScreen() {
     // SSM data from service via repository
     val ssmRepository = LocalSsmRepository.current
     val engineDataRaw by ssmRepository.engineData.collectAsState()
+    // Graph view state, hoisted so portrait and landscape share it.
+    var graphWindow by rememberSaveable { mutableStateOf(GraphWindow.FIVE_MIN) }
+    var maximizedGraphId by rememberSaveable { mutableStateOf<Int?>(null) }
+
     val historyStore = LocalHistoryStore.current
     val historyVersion by historyStore.version.collectAsState()
 
@@ -178,7 +182,18 @@ fun DashboardScreen() {
                                         onGaugeLongClick = { id -> showDialogForId = id },
                                         onPresetClick = { showPresetSheet = true }
                                 )
-                        ScreenMode.GRAPHS -> GraphsContent(engineData, historyStore, historyVersion, gaugeConfigs)
+                        ScreenMode.GRAPHS -> GraphsContent(
+                                        data = engineData,
+                                        store = historyStore,
+                                        version = historyVersion,
+                                        gaugeConfigs = gaugeConfigs,
+                                        window = graphWindow,
+                                        onWindowChange = { graphWindow = it },
+                                        maximizedId = maximizedGraphId,
+                                        onToggleMaximize = { id ->
+                                            maximizedGraphId = if (maximizedGraphId == id) null else id
+                                        }
+                                )
                         ScreenMode.OTHER -> OtherContent(engineData)
                         ScreenMode.MESSAGES -> MessagesContent()
                     }
@@ -220,7 +235,18 @@ fun DashboardScreen() {
                                         onGaugeLongClick = { id -> showDialogForId = id },
                                         onPresetClick = { showPresetSheet = true }
                                 )
-                        ScreenMode.GRAPHS -> GraphsContent(engineData, historyStore, historyVersion, gaugeConfigs)
+                        ScreenMode.GRAPHS -> GraphsContent(
+                                        data = engineData,
+                                        store = historyStore,
+                                        version = historyVersion,
+                                        gaugeConfigs = gaugeConfigs,
+                                        window = graphWindow,
+                                        onWindowChange = { graphWindow = it },
+                                        maximizedId = maximizedGraphId,
+                                        onToggleMaximize = { id ->
+                                            maximizedGraphId = if (maximizedGraphId == id) null else id
+                                        }
+                                )
                         ScreenMode.OTHER -> OtherContent(engineData)
                         ScreenMode.MESSAGES -> MessagesContent()
                     }
@@ -670,6 +696,7 @@ fun DynamicLineGraph(
         data: EngineData,
         store: HistoryStore,
         version: Long,
+        window: GraphWindow,
         color: Color,
         modifier: Modifier = Modifier
 ) {
@@ -707,8 +734,9 @@ fun DynamicLineGraph(
 
     // targetUnit is part of the conversion key: without it, toggling a gauge's unit
     // with the engine off would keep drawing the old unit until the next sample.
-    val revision = remember(version, key) {
-        store.queryLatest(key, GRAPH_WINDOW_MS, raw)
+    val revision = remember(version, key, window) {
+        val duration = window.durationMs
+        if (duration == null) store.queryAll(key, raw) else store.queryLatest(key, duration, raw)
         version
     }
     val displayRevision = remember(revision, targetUnit, def) {
@@ -760,28 +788,57 @@ fun GraphsContent(
         data: EngineData,
         store: HistoryStore,
         version: Long,
-        gaugeConfigs: List<GaugeConfig>
+        gaugeConfigs: List<GaugeConfig>,
+        window: GraphWindow,
+        onWindowChange: (GraphWindow) -> Unit,
+        maximizedId: Int?,
+        onToggleMaximize: (Int) -> Unit
 ) {
     // Graph colors cycle by column: Green, Teal, Orange
     val colors = listOf(GaugeGreen, GaugeTeal, GaugeOrange)
 
     Column(modifier = Modifier.fillMaxSize()) {
+        GraphWindowSelector(
+                selected = window,
+                onSelect = onWindowChange,
+                modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
+        )
+
         // IDs 2-10 map to 9 graphs in 3x3 grid
         val graphIds = (2..10).toList().chunked(3)
 
         graphIds.forEach { rowIds ->
             Row(modifier = Modifier.weight(1f)) {
-                rowIds.forEachIndexed { columnIndex, gaugeId ->
+                // A maximized graph takes over its own row; the other rows are untouched,
+                // so the maximized trace is three times wider without losing context.
+                val maximizedInRow = rowIds.firstOrNull { it == maximizedId }
+                val visibleIds = if (maximizedInRow != null) listOf(maximizedInRow) else rowIds
+
+                visibleIds.forEach { gaugeId ->
                     val config = gaugeConfigs.find { it.id == gaugeId }
                             ?: GaugeConfig(gaugeId, "Unknown")
+
+                    // Keep the column colour stable when maximized, so a graph does not
+                    // change colour just because it grew.
+                    val colorIndex = rowIds.indexOf(gaugeId).coerceAtLeast(0)
+
+                    // A disabled slot has nothing to enlarge, so it stays inert.
+                    val enabled = config.parameterName != GAUGE_DISABLED_PARAM
 
                     DynamicLineGraph(
                             config = config,
                             data = data,
                             store = store,
                             version = version,
-                            color = colors[columnIndex],
-                            modifier = Modifier.weight(1f).padding(4.dp)
+                            window = window,
+                            color = colors[colorIndex % colors.size],
+                            modifier = Modifier
+                                    .weight(1f)
+                                    .padding(4.dp)
+                                    .then(
+                                            if (enabled) Modifier.clickable { onToggleMaximize(gaugeId) }
+                                            else Modifier
+                                    )
                     )
                 }
             }

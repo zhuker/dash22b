@@ -120,6 +120,21 @@ class HistoryStore(val capacity: Int = DEFAULT_CAPACITY) {
         out.finish()
     }
 
+    /**
+     * Everything retained, oldest sample to newest.
+     *
+     * Note this is the ring's contents, not the whole drive: once [capacity] samples
+     * have been recorded the oldest are overwritten, so "all" means "all we still have".
+     */
+    fun queryAll(param: String, out: SeriesBuffer) {
+        val span = span()
+        if (span == null || span.first == span.last) {
+            out.reset(param, unitOf(param) ?: DisplayUnit.UNKNOWN, span?.first ?: 0L, span?.last ?: 0L)
+            return
+        }
+        query(param, span.first, span.last, out)
+    }
+
     /** Live-follow convenience: the trailing [durationMs] ending at the newest sample. */
     fun queryLatest(param: String, durationMs: Long, out: SeriesBuffer) {
         val newest = span()?.last

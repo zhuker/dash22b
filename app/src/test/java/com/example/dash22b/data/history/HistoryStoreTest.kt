@@ -171,6 +171,46 @@ class HistoryStoreTest {
     }
 
     @Test
+    fun `queryAll spans everything retained`() {
+        val store = HistoryStore(capacity = 100)
+        repeat(10) { i -> store.record(sample(i * 1_000L, "Boost" to i.toFloat())) }
+
+        val out = SeriesBuffer(10)
+        store.queryAll("Boost", out)
+
+        assertEquals(0L, out.fromTs)
+        assertEquals(9_000L, out.toTs)
+        assertEquals(0f, out.mean[0], 0f)
+        assertEquals(9f, out.max[out.count - 1], 0f)
+    }
+
+    @Test
+    fun `queryAll is bounded by the ring, not the whole drive`() {
+        val store = HistoryStore(capacity = 4)
+        repeat(10) { i -> store.record(sample(i * 1_000L, "Boost" to i.toFloat())) }
+
+        val out = SeriesBuffer(4)
+        store.queryAll("Boost", out)
+
+        // Samples 0..5 were overwritten; "all" means all we still have.
+        assertEquals(6_000L, out.fromTs)
+        assertEquals(9_000L, out.toTs)
+    }
+
+    @Test
+    fun `queryAll on an empty or single-sample store is safe`() {
+        val store = HistoryStore(capacity = 8)
+        val out = SeriesBuffer(4)
+
+        store.queryAll("Boost", out)
+        assertEquals(0, out.count)
+
+        store.record(sample(500L, "Boost" to 3f))
+        store.queryAll("Boost", out)
+        assertEquals(0, out.count)
+    }
+
+    @Test
     fun `version advances once per sample`() {
         val store = HistoryStore(capacity = 8)
         assertEquals(0L, store.version.value)
