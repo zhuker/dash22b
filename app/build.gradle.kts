@@ -4,6 +4,49 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+fun git(vararg args: String): String = try {
+    providers.exec {
+        workingDir = rootDir
+        commandLine("git", *args)
+        isIgnoreExitValue = true
+    }.standardOutput.asText.get().trim()
+} catch (e: Exception) {
+    ""
+}
+
+// Version identity comes from git tags, not a hardcoded string. `git describe`
+// yields "v0.3.0-fuel-calibration" on a release tag, and
+// "v0.3.0-fuel-calibration-1-g4798128-dirty" for anything built past it.
+val gitDescribe = git("describe", "--tags", "--dirty", "--always").ifEmpty { "0.0.0-nogit" }
+val gitLastTag = git("describe", "--tags", "--abbrev=0")
+val gitSha = git("rev-parse", "--short", "HEAD").ifEmpty { "unknown" }
+val gitBranch = git("rev-parse", "--abbrev-ref", "HEAD").ifEmpty { "unknown" }
+val gitDate = git("log", "-1", "--format=%cd", "--date=short").ifEmpty { "unknown" }
+val gitCommitCount = git("rev-list", "--count", "HEAD").toIntOrNull() ?: 1
+
+// A build is a "release" only if HEAD sits exactly on a tag with no local edits.
+val isReleaseBuild = gitLastTag.isNotEmpty() && gitDescribe == gitLastTag
+
+// One-sentence summary for the Messages welcome banner. On a release build it is
+// the first line of the matching release-notes file (the same file that becomes
+// the GitHub release body). Otherwise fall back to git, since a work-in-progress
+// build has no human-written summary yet.
+val whatsNewLine: String = run {
+    val notes = rootProject.file("release-notes/$gitLastTag.md")
+    if (isReleaseBuild && notes.exists()) {
+        notes.readLines().firstOrNull { it.isNotBlank() }.orEmpty()
+    } else {
+        val ahead = if (gitLastTag.isEmpty()) 0
+                    else git("rev-list", "--count", "$gitLastTag..HEAD").toIntOrNull() ?: 0
+        val subjects = git("log", "-2", "--format=%s")
+            .lines().filter { it.isNotBlank() }.joinToString(" | ")
+        val dirtyNote = if (gitDescribe.endsWith("-dirty")) " + uncommitted changes" else ""
+        "Dev build, $ahead commit(s) past $gitLastTag$dirtyNote: $subjects"
+    }
+}
+
+fun esc(s: String) = s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ")
+
 android {
     namespace = "com.example.dash22b"
     compileSdk = 34
@@ -12,8 +55,14 @@ android {
         applicationId = "com.example.dash22b"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = gitCommitCount
+        versionName = gitDescribe.removePrefix("v")
+
+        buildConfigField("String", "GIT_SHA", "\"${esc(gitSha)}\"")
+        buildConfigField("String", "GIT_BRANCH", "\"${esc(gitBranch)}\"")
+        buildConfigField("String", "GIT_DATE", "\"${esc(gitDate)}\"")
+        buildConfigField("String", "WHATS_NEW", "\"${esc(whatsNewLine)}\"")
+        buildConfigField("boolean", "IS_RELEASE_BUILD", isReleaseBuild.toString())
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

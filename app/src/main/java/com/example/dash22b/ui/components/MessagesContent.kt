@@ -46,6 +46,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import com.example.dash22b.BuildConfig
 import com.example.dash22b.data.ChatMessage
 import com.example.dash22b.di.LocalDtcRepository
 import com.example.dash22b.obd.SsmDtcCode
@@ -68,7 +69,7 @@ fun MessagesContent() {
     // Auto-read codes when first opening (if no messages yet)
     LaunchedEffect(Unit) {
         if (messages.isEmpty()) {
-            dtcRepository.addCarMessage("Connected to ECU. Type \"read codes\" to scan for trouble codes, or \"clear codes\" to reset.")
+            dtcRepository.addCarMessage(buildWelcomeMessage())
         }
     }
 
@@ -294,4 +295,29 @@ private fun StatusChip(label: String, color: Color) {
             .background(color, shape = RoundedCornerShape(4.dp))
             .padding(horizontal = 6.dp, vertical = 2.dp)
     )
+}
+
+/**
+ * Welcome banner for the Messages tab. Leads with the build identity so the version
+ * running on the phone can be read off the screen without a cable: the version string
+ * comes from `git describe` at build time, so a release build shows its tag
+ * ("0.3.0-fuel-calibration") while anything built past it is visibly marked
+ * ("0.3.0-fuel-calibration-1-g4798128-dirty").
+ */
+private fun buildWelcomeMessage(): String {
+    val build = if (BuildConfig.IS_RELEASE_BUILD) "release" else "dev"
+    return buildString {
+        append("dash22b ")
+        append(BuildConfig.VERSION_NAME)
+        append(" (")
+        append(build)
+        append(", ")
+        append(BuildConfig.GIT_BRANCH)
+        append(", ")
+        append(BuildConfig.GIT_DATE)
+        append(")\n")
+        append(BuildConfig.WHATS_NEW)
+        append("\n\n")
+        append("Connected to ECU. Type \"read codes\" to scan for trouble codes, or \"clear codes\" to reset.")
+    }
 }
