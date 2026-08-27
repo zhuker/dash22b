@@ -91,10 +91,18 @@ fi
 [[ -f "$APK" ]] || { git tag -d "$TAG"; fail "expected APK at $APK"; }
 
 # Verify the APK actually carries the tag, so a stale Gradle configuration cache
-# can never ship an APK that misreports its own version.
-BAKED="$(unzip -p "$APK" AndroidManifest.xml 2>/dev/null | strings | grep -m1 -F "${TAG#v}" || true)"
-if [[ -z "$BAKED" ]]; then
-    echo "warning: could not confirm '${TAG#v}' inside the APK manifest" >&2
+# can never ship an APK that misreports its own version. Binary AndroidManifest
+# stores strings as UTF-16, so read it with aapt2 rather than grepping the zip.
+AAPT2="$(ls "$HOME"/Library/Android/sdk/build-tools/*/aapt2 2>/dev/null | sort -V | tail -1 || true)"
+if [[ -n "$AAPT2" && -x "$AAPT2" ]]; then
+    BAKED="$("$AAPT2" dump badging "$APK" 2>/dev/null | sed -n "s/.*versionName='\([^']*\)'.*/\1/p" | head -1)"
+    if [[ "$BAKED" != "${TAG#v}" ]]; then
+        git tag -d "$TAG"
+        fail "APK reports versionName '$BAKED' but the tag is '${TAG#v}'; tag removed"
+    fi
+    echo "==> apk versionName: $BAKED"
+else
+    echo "warning: aapt2 not found, cannot confirm the APK's versionName" >&2
     echo "         check the Messages tab banner after installing" >&2
 fi
 
