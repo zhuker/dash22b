@@ -6,8 +6,18 @@ import org.junit.Assert.assertEquals
 class UnitConverterTest {
     @Test
     fun testAFR() {
-        assertEquals(1.0f, UnitConverter.convert(14.7f, DisplayUnit.LAMBDA, DisplayUnit.AFR))
-        assertEquals(14.7f, UnitConverter.convert(1.0f, DisplayUnit.AFR, DisplayUnit.LAMBDA))
+        // convert(value, from, to). Stoichiometric gasoline is 14.7:1, so lambda 1.0
+        // is AFR 14.7 -- not the other way round.
+        assertEquals(14.7f, UnitConverter.convert(1.0f, DisplayUnit.LAMBDA, DisplayUnit.AFR), 0.001f)
+        assertEquals(1.0f, UnitConverter.convert(14.7f, DisplayUnit.AFR, DisplayUnit.LAMBDA), 0.001f)
+    }
+
+    @Test
+    fun testAFRRoundTrip() {
+        val lambda = 0.85f  // a plausible boosted target
+        val afr = UnitConverter.convert(lambda, DisplayUnit.LAMBDA, DisplayUnit.AFR)
+        assertEquals(12.495f, afr, 0.001f)
+        assertEquals(lambda, UnitConverter.convert(afr, DisplayUnit.AFR, DisplayUnit.LAMBDA), 0.001f)
     }
 
     @Test
