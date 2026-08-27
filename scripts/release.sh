@@ -2,8 +2,9 @@
 #
 # Cut a dash22b release: tag -> build -> GitHub release.
 #
-#   scripts/release.sh v0.4.0-presets        # cut the release
-#   scripts/release.sh v0.4.0-presets --dry  # validate only, change nothing
+#   scripts/release.sh v0.4.0-presets          # cut the release
+#   scripts/release.sh v0.4.0-presets --dry    # validate only, change nothing
+#   scripts/release.sh v0.4.0-presets --local  # tag + build only, publish nothing
 #
 # Version identity lives in git tags, not in build.gradle.kts. `git describe` feeds
 # versionName / versionCode / BuildConfig at build time, so the tag created here is
@@ -19,13 +20,18 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 TAG="${1:-}"
-DRY_RUN="${2:-}"
+MODE="${2:-}"
 
 if [[ -z "$TAG" ]]; then
-    echo "usage: scripts/release.sh <tag> [--dry]" >&2
+    echo "usage: scripts/release.sh <tag> [--dry|--local]" >&2
     echo "  e.g. scripts/release.sh v0.4.0-presets" >&2
     exit 1
 fi
+
+case "$MODE" in
+    ""|--dry|--local) ;;
+    *) echo "error: unknown mode '$MODE' (expected --dry or --local)" >&2; exit 1 ;;
+esac
 
 NOTES="release-notes/${TAG}.md"
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
@@ -55,14 +61,14 @@ SUMMARY="$(grep -m1 '[^[:space:]]' "$NOTES")"
 git rev-parse "$TAG" >/dev/null 2>&1 \
     && fail "tag $TAG already exists"
 
-command -v gh >/dev/null || fail "gh CLI not found"
+[[ "$MODE" == "--local" ]] || command -v gh >/dev/null || fail "gh CLI not found"
 
 echo "tag:      $TAG"
 echo "branch:   $BRANCH"
 echo "summary:  $SUMMARY"
 echo "notes:    $NOTES"
 
-if [[ "$DRY_RUN" == "--dry" ]]; then
+if [[ "$MODE" == "--dry" ]]; then
     echo
     echo "dry run: preflight passed, nothing changed"
     exit 0
@@ -94,6 +100,15 @@ fi
 
 SHA="$(shasum -a 256 "$APK" | cut -d' ' -f1)"
 echo "==> apk sha256: $SHA"
+
+if [[ "$MODE" == "--local" ]]; then
+    echo
+    echo "local mode: tagged and built, nothing pushed or published."
+    echo "  apk:     $APK"
+    echo "  install: adb install -r $APK"
+    echo "  publish: scripts/release.sh $TAG   (after deleting the local tag: git tag -d $TAG)"
+    exit 0
+fi
 
 echo "==> pushing"
 git push origin "$BRANCH"
