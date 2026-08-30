@@ -55,6 +55,7 @@ import com.example.dash22b.data.history.HistoryStore
 import com.example.dash22b.data.history.SeriesBuffer
 import com.example.dash22b.data.history.convertInto
 import com.example.dash22b.di.LocalHistoryStore
+import com.example.dash22b.ui.components.AutoAxis
 import com.example.dash22b.ui.components.GraphWindow
 import com.example.dash22b.ui.components.GraphWindowSelector
 import com.example.dash22b.ui.components.LineGraph
@@ -710,6 +711,7 @@ fun DynamicLineGraph(
                 unit = DisplayUnit.UNKNOWN,
                 currentValue = 0f,
                 color = Color.DarkGray,
+                range = 0f to 1f,
                 modifier = modifier
         )
         return
@@ -758,6 +760,14 @@ fun DynamicLineGraph(
         currentConverted
     }
 
+    // A confident fixed range wins; otherwise autoscale, held across frames so the
+    // axis grows at once but shrinks only after the data settles.
+    val axis = remember(key, targetUnit) { AutoAxis() }
+    val yRange = remember(displayRevision, targetUnit, def) {
+        parameterRegistry.getExpectedRange(def, targetUnit)
+            ?: axis.update(display.dataMin(), display.dataMax(), display.toTs)
+    }
+
     // Use parameter name as label
     val label_ = def?.name ?: key
     val label = label_.split(" ").firstOrNull() ?: label_
@@ -769,10 +779,7 @@ fun DynamicLineGraph(
             currentValue = displayValue,
             color = color,
             modifier = modifier,
-            // Null means "no confident range" and the graph autoscales to the data.
-            // Pinning an unlisted parameter to 0..100 used to bury knock correction
-            // (always <= 0) on the bottom edge and push MAF spikes off the top.
-            range = parameterRegistry.getExpectedRange(def, targetUnit),
+            range = yRange,
             revision = displayRevision
     )
 }

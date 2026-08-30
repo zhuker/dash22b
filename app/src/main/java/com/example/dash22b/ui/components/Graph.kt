@@ -39,8 +39,9 @@ fun LineGraph(
     color: Color,
     currentValue: Float,
     modifier: Modifier = Modifier,
-    /** Fixed Y bounds, or null to autoscale to the data in view. */
-    range: Pair<Float, Float>? = null,
+    /** Y bounds to draw against. Resolved by the caller: a confident fixed range, or
+     *  an [AutoAxis] result when there is none. */
+    range: Pair<Float, Float>,
     // Redraw key: Canvas reads mutable arrays, so it needs an explicit reason to
     // recompose when the buffer is refilled in place.
     revision: Long = 0L
@@ -64,9 +65,8 @@ fun LineGraph(
                         val height = size.height
                         val n = series.count
 
-                        val bounds = range ?: series.autoBounds()
-                        val min = bounds.first
-                        val max = bounds.second
+                        val min = range.first
+                        val max = range.second
                         val span = (max - min).coerceAtLeast(MIN_Y_SPAN)
 
                         fun xOf(index: Int) =
@@ -156,43 +156,5 @@ fun LineGraph(
     }
 }
 
-private fun SeriesBuffer.finiteMin(): Float? {
-    var m = Float.MAX_VALUE
-    var found = false
-    for (i in 0 until count) {
-        val v = min[i]
-        if (!v.isNaN() && v < m) { m = v; found = true }
-    }
-    return if (found) m else null
-}
-
-private fun SeriesBuffer.finiteMax(): Float? {
-    var m = -Float.MAX_VALUE
-    var found = false
-    for (i in 0 until count) {
-        val v = max[i]
-        if (!v.isNaN() && v > m) { m = v; found = true }
-    }
-    return if (found) m else null
-}
-
-/** Y span floor, so a dead-flat trace does not get amplified into noise. */
-private const val MIN_Y_SPAN = 1f
-
-/**
- * Bounds for a graph with no confident fixed range: the data's own extent with 10%
- * headroom, and zero included whenever the trace is close to it so the sign of a
- * value stays readable.
- */
-private fun SeriesBuffer.autoBounds(): Pair<Float, Float> {
-    val lo = finiteMin() ?: return 0f to 100f
-    val hi = finiteMax() ?: return 0f to 100f
-
-    var min = lo
-    var max = hi
-    if (min > 0f && min < (max - min)) min = 0f
-    if (max < 0f && -max < (max - min)) max = 0f
-
-    val pad = ((max - min) * 0.1f).coerceAtLeast(MIN_Y_SPAN / 2f)
-    return (min - pad) to (max + pad)
-}
+/** Y span floor, guarding against a zero-width axis. */
+private const val MIN_Y_SPAN = 0.0001f

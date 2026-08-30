@@ -84,6 +84,28 @@ class SeriesBuffer(val buckets: Int) {
         count = if (filled > 0) buckets else 0
     }
 
+    /** Lowest bucket minimum in view, or null when every bucket is a gap. */
+    fun dataMin(): Float? {
+        var m = Float.MAX_VALUE
+        var found = false
+        for (i in 0 until count) {
+            val v = min[i]
+            if (!v.isNaN() && v < m) { m = v; found = true }
+        }
+        return if (found) m else null
+    }
+
+    /** Highest bucket maximum in view, or null when every bucket is a gap. */
+    fun dataMax(): Float? {
+        var m = -Float.MAX_VALUE
+        var found = false
+        for (i in 0 until count) {
+            val v = max[i]
+            if (!v.isNaN() && v > m) { m = v; found = true }
+        }
+        return if (found) m else null
+    }
+
     /** Copies [src] into this buffer wholesale; used by the unit-conversion pass. */
     internal fun copyMetaFrom(src: SeriesBuffer) {
         param = src.param
