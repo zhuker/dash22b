@@ -60,17 +60,28 @@ class SsmDataSource(private val context: Context,
             val dynamicValues = mutableMapOf<String, ValueWithUnit>()
             var offset = 1  // Skip 0xE8 marker
 
-            // Parse each parameter value (only the ones we requested)
+            // Parse each parameter value (only the ones we requested).
+            //
+            // The SSM read response is purely positional: values come back in the order
+            // the addresses were requested, with nothing identifying them. So the offset
+            // MUST advance by this parameter's length whether or not it parses -- it is
+            // a property of the response layout, not of our success in reading it.
+            // Advancing it only on success (as this used to) means one failure shifts
+            // every later parameter in the row by that many bytes, and they all decode
+            // into plausible-looking wrong numbers that reach the graphs and the CSV
+            // with nothing marking them as suspect.
             parametersRead.forEach { param ->
-                try {
-                    if (offset + param.length > data.size) {
-                        Timber.tag(TAG).w("Not enough data for ${param.name} at offset $offset")
-                        return@forEach
-                    }
+                val valueOffset = offset
+                offset += param.length
 
+                if (valueOffset + param.length > data.size) {
+                    Timber.tag(TAG).w("Not enough data for ${param.name} at offset $valueOffset")
+                    return@forEach
+                }
+
+                try {
                     // Parse raw value from bytes
-                    val rawValue = param.parseValue(data, offset)
-                    offset += param.length
+                    val rawValue = param.parseValue(data, valueOffset)
 
                     // Apply conversion expression
                     val convertedValue = SsmExpressionEvaluator.evaluate(param.expression, rawValue)
@@ -81,6 +92,8 @@ class SsmDataSource(private val context: Context,
                     dynamicValues[param.name] = ValueWithUnit(convertedValue, param.unit)
 
                 } catch (e: Exception) {
+                    // Drop just this parameter. Later ones stay aligned because the
+                    // offset already moved past this value.
                     Timber.tag(TAG).e(e, "Error parsing ${param.name}")
                 }
             }
