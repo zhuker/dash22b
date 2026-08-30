@@ -41,13 +41,6 @@ class ParameterRegistry private constructor(
     private val definitions: Map<String, ParameterDefinition>
 ) {
     companion object {
-        private val minMaxMap = mapOf<String, RangeWithUnit>(
-            "Engine Speed" to RangeWithUnit(0f, 8000f, DisplayUnit.RPM),
-            "Battery Voltage" to RangeWithUnit(2f, 22f, DisplayUnit.VOLTS),
-            "Fuel Tank Pressure" to RangeWithUnit(-2f, 2f, DisplayUnit.BAR),
-            "Coolant Temperature" to RangeWithUnit(20f, 150f, DisplayUnit.C),
-            "Atmospheric Pressure" to RangeWithUnit(0f, 2f, DisplayUnit.BAR),
-        )
         private val manualMap = mapOf(
             "Comm Fuel Final" to "Final Fuel Base", // Commanded Fuel Final (AFR) = Stoichiometric AFR / Final Fueling Base (Lambda)
             "AF Correction 1" to "A/F Correction 1",
@@ -176,31 +169,13 @@ class ParameterRegistry private constructor(
         return definitions.values.distinctBy { it.accessportName }.sortedBy { it.accessportName }
     }
 
-    fun getMinExpected(def: ParameterDefinition?, targetUnit: DisplayUnit): Float {
-        if (def == null) return 0f
-        ParameterCalibration.getRange(def.name, targetUnit)?.let { return it.first }
-        if (!minMaxMap.containsKey(def.name)) {
-//            Timber.w("oops cant find minmax for '${def.name}'")
-            if (def.unit == DisplayUnit.VOLTS) {
-                return -12f
-            }
-        }
-        val mm = minMaxMap[def.name] ?: return 0f
-        return UnitConverter.convert(mm.min, mm.unit, targetUnit)
-    }
-    fun getMaxExpected(def: ParameterDefinition?, targetUnit: DisplayUnit): Float {
-        if (def == null) return 100f
-        ParameterCalibration.getRange(def.name, targetUnit)?.let { return it.second }
-        if (!minMaxMap.containsKey(def.name)) {
-//            Timber.w("oops cant find minmax for '${def.name}'")
-            if (def.unit == DisplayUnit.VOLTS) {
-                return 12f
-            }
-        }
-        val mm = minMaxMap[def.name] ?: return 100f
-        val convert = UnitConverter.convert(mm.max, mm.unit, targetUnit)
-//        Timber.d("${def.name} max $convert $targetUnit")
-        return convert
-    }
+    fun getExpectedRange(def: ParameterDefinition?, targetUnit: DisplayUnit): Pair<Float, Float>? =
+        ParameterRanges.expected(def, targetUnit)
+
+    fun getMinExpected(def: ParameterDefinition?, targetUnit: DisplayUnit): Float =
+        ParameterRanges.min(def, targetUnit)
+
+    fun getMaxExpected(def: ParameterDefinition?, targetUnit: DisplayUnit): Float =
+        ParameterRanges.max(def, targetUnit)
 
 }

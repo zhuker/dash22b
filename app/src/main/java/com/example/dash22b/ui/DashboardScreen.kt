@@ -769,8 +769,10 @@ fun DynamicLineGraph(
             currentValue = displayValue,
             color = color,
             modifier = modifier,
-            minY = parameterRegistry.getMinExpected(def, targetUnit),
-            maxY = parameterRegistry.getMaxExpected(def, targetUnit),
+            // Null means "no confident range" and the graph autoscales to the data.
+            // Pinning an unlisted parameter to 0..100 used to bury knock correction
+            // (always <= 0) on the bottom edge and push MAF spikes off the top.
+            range = parameterRegistry.getExpectedRange(def, targetUnit),
             revision = displayRevision
     )
 }

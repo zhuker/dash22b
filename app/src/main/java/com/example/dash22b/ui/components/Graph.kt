@@ -39,8 +39,8 @@ fun LineGraph(
     color: Color,
     currentValue: Float,
     modifier: Modifier = Modifier,
-    minY: Float? = null,
-    maxY: Float? = null,
+    /** Fixed Y bounds, or null to autoscale to the data in view. */
+    range: Pair<Float, Float>? = null,
     // Redraw key: Canvas reads mutable arrays, so it needs an explicit reason to
     // recompose when the buffer is refilled in place.
     revision: Long = 0L
@@ -64,15 +64,18 @@ fun LineGraph(
                         val height = size.height
                         val n = series.count
 
-                        val min = minY ?: series.finiteMin() ?: 0f
-                        val max = maxY ?: series.finiteMax() ?: 100f
-                        val range = (max - min).coerceAtLeast(1f)
+                        val bounds = range ?: series.autoBounds()
+                        val min = bounds.first
+                        val max = bounds.second
+                        val span = (max - min).coerceAtLeast(MIN_Y_SPAN)
 
                         fun xOf(index: Int) =
                             (index.toFloat() / (n - 1).coerceAtLeast(1)) * width
 
+                        // Clamp rather than let an out-of-range excursion draw outside
+                        // the plot box: it parks on the edge, where it stays visible.
                         fun yOf(value: Float) =
-                            height - (((value - min) / range) * height)
+                            height - ((((value - min) / span).coerceIn(0f, 1f)) * height)
 
                         // Min/max band
                         val band = Path()
@@ -171,4 +174,25 @@ private fun SeriesBuffer.finiteMax(): Float? {
         if (!v.isNaN() && v > m) { m = v; found = true }
     }
     return if (found) m else null
+}
+
+/** Y span floor, so a dead-flat trace does not get amplified into noise. */
+private const val MIN_Y_SPAN = 1f
+
+/**
+ * Bounds for a graph with no confident fixed range: the data's own extent with 10%
+ * headroom, and zero included whenever the trace is close to it so the sign of a
+ * value stays readable.
+ */
+private fun SeriesBuffer.autoBounds(): Pair<Float, Float> {
+    val lo = finiteMin() ?: return 0f to 100f
+    val hi = finiteMax() ?: return 0f to 100f
+
+    var min = lo
+    var max = hi
+    if (min > 0f && min < (max - min)) min = 0f
+    if (max < 0f && -max < (max - min)) max = 0f
+
+    val pad = ((max - min) * 0.1f).coerceAtLeast(MIN_Y_SPAN / 2f)
+    return (min - pad) to (max + pad)
 }
