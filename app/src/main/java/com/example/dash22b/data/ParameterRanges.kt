@@ -33,12 +33,18 @@ object ParameterRanges {
         "Intake Temp" to RangeWithUnit(-20f, 100f, DisplayUnit.C),
 
         // Pressures
-        "Fuel Tank Pressure" to RangeWithUnit(-2f, 2f, DisplayUnit.BAR),
-        "Atmospheric Pressure" to RangeWithUnit(0f, 2f, DisplayUnit.BAR),
+        // FTP is one byte through (x-128)/40, so -3.2..+3.175 kPa is the whole
+        // physical range of the sensor. It was previously listed as +-2 BAR, i.e.
+        // +-200 kPa: 60x too wide, which drew the EVAP signal as a flat line.
+        // Confirmed against 2026-08-29 logs, quantised to 0.025 kPa = 1/40.
+        "Fuel Tank Pressure" to RangeWithUnit(-3.2f, 3.2f, DisplayUnit.KPA),
+        // Sea level is ~101 kPa; the low end covers roughly 10,000 ft.
+        "Atmospheric Pressure" to RangeWithUnit(70f, 110f, DisplayUnit.KPA),
         "Manifold Absolute Pressure" to RangeWithUnit(0f, 250f, DisplayUnit.KPA),
         "MAP" to RangeWithUnit(0f, 250f, DisplayUnit.KPA),
-        // Relative to atmosphere: full vacuum up past the EJ257's boost ceiling.
-        "Manifold Relative Pressure" to RangeWithUnit(-100f, 150f, DisplayUnit.KPA),
+        // One byte through (x-128), so -128..+127 kPa is the sensor's whole range;
+        // anything wider would put part of the axis out of the ECU's reach.
+        "Manifold Relative Pressure" to RangeWithUnit(-128f, 127f, DisplayUnit.KPA),
 
         // Percentages
         "Throttle Opening Angle" to RangeWithUnit(0f, 100f, DisplayUnit.PERCENT),
@@ -51,7 +57,9 @@ object ParameterRanges {
 
         // Timing. Knock correction is retard, so it is zero or negative; the small
         // positive headroom keeps a healthy 0 line off the very top edge.
-        "Ignition Timing" to RangeWithUnit(-15f, 45f, DisplayUnit.DEGREES),
+        // Light-load cruise timing can reach the high 40s on this engine, so leave
+        // headroom above it rather than clipping the top of the trace.
+        "Ignition Timing" to RangeWithUnit(-20f, 60f, DisplayUnit.DEGREES),
         "Knock Correction Advance" to RangeWithUnit(-15f, 2f, DisplayUnit.DEGREES),
         "Knock Correction" to RangeWithUnit(-15f, 2f, DisplayUnit.DEGREES),
         "Fine Learning Knock Correction" to RangeWithUnit(-15f, 2f, DisplayUnit.DEGREES),

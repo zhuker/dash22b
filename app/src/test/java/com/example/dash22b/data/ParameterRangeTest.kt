@@ -3,6 +3,7 @@ package com.example.dash22b.data
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -49,6 +50,32 @@ class ParameterRangeTest {
         assertNull(registry.expected(Def("DAM", DisplayUnit.MULTIPLIER), DisplayUnit.MULTIPLIER))
         assertNull(registry.expected(Def("Nonexistent Param", DisplayUnit.PERCENT), DisplayUnit.PERCENT))
         assertNull(registry.expected(null, DisplayUnit.PERCENT))
+    }
+
+    @Test
+    fun `fuel tank pressure spans the sensor, in kPa not bar`() {
+        // One byte through (x-128)/40 gives -3.2..+3.175 kPa. Logged values on
+        // 2026-08-29 ran -2.08..+2.63 kPa, so a +-2 bar axis was 60x too wide.
+        val r = registry.expected(Def("Fuel Tank Pressure", DisplayUnit.KPA), DisplayUnit.KPA)!!
+        assertEquals(-3.2f, r.first, 0.001f)
+        assertEquals(3.2f, r.second, 0.001f)
+
+        val observedMin = -2.075f
+        val observedMax = 2.625f
+        assertTrue("observed minimum must fit the axis", observedMin > r.first)
+        assertTrue("observed maximum must fit the axis", observedMax < r.second)
+        // A real EVAP pulldown has to use a usable share of the plot height.
+        assertTrue(
+            "observed span should fill a good fraction of the axis",
+            (observedMax - observedMin) / (r.second - r.first) > 0.5f
+        )
+    }
+
+    @Test
+    fun `pressure ranges stay inside what a single byte can express`() {
+        val map = registry.expected(Def("Manifold Relative Pressure", DisplayUnit.KPA), DisplayUnit.KPA)!!
+        assertTrue("x-128 cannot exceed +127 kPa", map.second <= 127f)
+        assertTrue("x-128 cannot go below -128 kPa", map.first >= -128f)
     }
 
     @Test
