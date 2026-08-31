@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.dash22b.data.DisplayUnit
 import com.example.dash22b.data.history.SeriesBuffer
@@ -137,6 +138,10 @@ fun LineGraph(
                     text = label,
                     color = Color.White,
                     style = MaterialTheme.typography.bodyMedium,
+                    // A long name must not wrap onto a second line: the row is laid out
+                    // against the plot above it, and growing it would shrink the trace.
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
                 Text(

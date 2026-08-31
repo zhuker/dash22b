@@ -702,7 +702,8 @@ fun DynamicLineGraph(
         version: Long,
         window: GraphWindow,
         color: Color,
-        modifier: Modifier = Modifier
+        modifier: Modifier = Modifier,
+        maximized: Boolean = false
 ) {
     val parameterRegistry = LocalParameterRegistry.current
 
@@ -771,9 +772,7 @@ fun DynamicLineGraph(
             ?: axis.update(display.dataMin(), display.dataMax(), display.toTs)
     }
 
-    // Use parameter name as label
-    val label_ = def?.name ?: key
-    val label = label_.split(" ").firstOrNull() ?: label_
+    val label = graphLabel(def?.name ?: key, maximized)
 
     LineGraph(
             series = display,
@@ -794,6 +793,20 @@ private fun SeriesBuffer.lastFinite(): Float? {
     }
     return null
 }
+
+/**
+ * The label for a graph tile.
+ *
+ * A tile in a 3x3 grid is a third of the screen wide, which is not enough for
+ * "Manifold Relative Pressure" -- hence the first word only, which is nearly always the
+ * distinguishing one ("Coolant", "Throttle", "Knock"). A maximized graph has the whole row,
+ * so it shows the full name.
+ *
+ * Falls back to the whole string when there is no space to split on, so a single-word name
+ * is never emptied.
+ */
+internal fun graphLabel(fullName: String, maximized: Boolean): String =
+    if (maximized) fullName else fullName.split(" ").firstOrNull()?.takeIf { it.isNotBlank() } ?: fullName
 
 /**
  * Graph slots as laid out: IDs 2-10 in a 3x3 grid, three per row.
@@ -869,6 +882,7 @@ fun GraphsContent(
                             version = version,
                             window = window,
                             color = colors[colorIndex % colors.size],
+                            maximized = gaugeId == maximizedInRow,
                             modifier = Modifier
                                     .weight(1f)
                                     .padding(4.dp)

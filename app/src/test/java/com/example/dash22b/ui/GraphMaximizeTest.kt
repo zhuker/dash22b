@@ -65,6 +65,39 @@ class GraphMaximizeTest {
     }
 
     @Test
+    fun `a maximized graph shows the full parameter name`() {
+        assertEquals(
+            "Manifold Relative Pressure",
+            graphLabel("Manifold Relative Pressure", maximized = true)
+        )
+    }
+
+    @Test
+    fun `a tile in the grid shows the first word, which is the distinguishing one`() {
+        assertEquals("Manifold", graphLabel("Manifold Relative Pressure", maximized = false))
+        assertEquals("Coolant", graphLabel("Coolant Temperature", maximized = false))
+        assertEquals("Fuel", graphLabel("Fuel Tank Pressure", maximized = false))
+    }
+
+    @Test
+    fun `a single-word name is unchanged either way`() {
+        assertEquals("Boost", graphLabel("Boost", maximized = false))
+        assertEquals("Boost", graphLabel("Boost", maximized = true))
+    }
+
+    @Test
+    fun `a leading space does not empty the label`() {
+        // split(" ").first() on " Coolant Temp" is "", which would render a blank tile.
+        assertEquals(" Coolant Temp", graphLabel(" Coolant Temp", maximized = false))
+    }
+
+    @Test
+    fun `an empty name stays empty rather than throwing`() {
+        assertEquals("", graphLabel("", maximized = false))
+        assertEquals("", graphLabel("", maximized = true))
+    }
+
+    @Test
     fun `an id outside the grid is toggled without touching anything else`() {
         val state = toggleMaximized(listOf(2), 99)
 
