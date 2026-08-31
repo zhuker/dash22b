@@ -140,6 +140,45 @@ object Obd2Frame {
     }
 
     /**
+     * Splits a raw K-line capture into each message's data bytes.
+     *
+     * A KWP2000 message is `[0x80|len][target][source][data...][checksum]`, and a single
+     * response can be several messages back to back — Mode $06 sends one test record per
+     * message, Mode $09 four bytes of a string per message. Treating the bytes after the
+     * first header as one flat payload silently mixes checksums and later headers into the
+     * data, which produces records that look plausible and are wrong.
+     *
+     * Malformed or truncated trailing bytes are skipped rather than guessed at.
+     */
+    fun frames(raw: ByteArray): List<ByteArray> {
+        val out = mutableListOf<ByteArray>()
+        var i = 0
+        while (i < raw.size) {
+            val fmt = raw[i].toInt() and 0xFF
+            val length = fmt and 0x3F
+            // Header must have the high bit set and the whole message must be present.
+            if (fmt and 0x80 == 0 || length == 0 || i + 3 + length + 1 > raw.size) {
+                i++
+                continue
+            }
+            out.add(raw.copyOfRange(i + 3, i + 3 + length))
+            i += 3 + length + 1
+        }
+        return out
+    }
+
+    /**
+     * The data bytes of every message that is a positive response to [mode]/[pid],
+     * with the `mode+0x40, pid` prefix stripped from each.
+     */
+    fun responseFrames(raw: ByteArray, mode: Int, pid: Int): List<ByteArray> {
+        val responseMode = positiveResponseMode(mode)
+        return frames(raw)
+            .filter { it.size > 2 && (it[0].toInt() and 0xFF) == responseMode && (it[1].toInt() and 0xFF) == pid }
+            .map { it.copyOfRange(2, it.size) }
+    }
+
+    /**
      * The negative response code from a `7F <mode> <nrc>` frame, or null.
      *
      * Worth keeping rather than collapsing to a boolean: KWP2000's 0x12 covers both

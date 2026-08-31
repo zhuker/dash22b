@@ -43,14 +43,17 @@ class Mode06Test {
 
     @Test
     fun `decodes the car's EVAP records, including the test that never ran`() {
-        // TID 83, from the sweep: three CIDs = the FSM's three EVAP leak sizes.
-        val payload = bytes(
-            0x01, 0x6A, 0x06, 0x6A, 0x7F,
-            0x02, 0x62, 0xE8, 0x6C, 0x08,
-            0x03, 0x00, 0x00, 0xFF, 0xFF
+        // Verbatim from the sweep: three KWP messages, one record each, with the request
+        // echo in front and a checksum after every message. Decoding this as one flat
+        // payload yields a correct first record and fictional ones after it.
+        val raw = bytes(
+            0xC2, 0x33, 0xF1, 0x06, 0x83, 0x6F,
+            0x87, 0xF1, 0x10, 0x46, 0x83, 0x01, 0x6A, 0x06, 0x6A, 0x7F, 0xAB,
+            0x87, 0xF1, 0x10, 0x46, 0x83, 0x02, 0x62, 0xE8, 0x6C, 0x08, 0x11,
+            0x87, 0xF1, 0x10, 0x46, 0x83, 0x03, 0x00, 0x00, 0xFF, 0xFF, 0x52
         )
 
-        val records = Mode06.decodeRecords(0x83, payload)
+        val records = Mode06.decodeRecords(raw, 0x83)
 
         assertEquals(3, records.size)
 
@@ -69,9 +72,49 @@ class Mode06Test {
     }
 
     @Test
+    fun `checksums and later headers never leak into a record`() {
+        // The bug this guards: chunking the flat payload by five produced CID AB with a
+        // value of 34801 -- a checksum and the next message's header read as data.
+        val raw = bytes(
+            0x87, 0xF1, 0x10, 0x46, 0x83, 0x01, 0x6A, 0x06, 0x6A, 0x7F, 0xAB,
+            0x87, 0xF1, 0x10, 0x46, 0x83, 0x03, 0x00, 0x00, 0xFF, 0xFF, 0x52
+        )
+
+        val records = Mode06.decodeRecords(raw, 0x83)
+
+        assertEquals(2, records.size)
+        assertEquals(listOf(0x01, 0x03), records.map { it.cid })
+        assertTrue(records.none { it.cid == 0xAB })
+    }
+
+    @Test
+    fun `records for other TIDs in the same capture are ignored`() {
+        val raw = bytes(
+            0x87, 0xF1, 0x10, 0x46, 0x81, 0x01, 0x01, 0x2B, 0x05, 0x33, 0xB4,
+            0x87, 0xF1, 0x10, 0x46, 0x83, 0x03, 0x00, 0x00, 0xFF, 0xFF, 0x52
+        )
+
+        assertEquals(1, Mode06.decodeRecords(raw, 0x83).size)
+        assertEquals(0x03, Mode06.decodeRecords(raw, 0x83).single().cid)
+        assertEquals(299, Mode06.decodeRecords(raw, 0x81).single().value)
+    }
+
+    @Test
+    fun `a truncated final message is dropped rather than half-read`() {
+        val raw = bytes(
+            0x87, 0xF1, 0x10, 0x46, 0x83, 0x01, 0x6A, 0x06, 0x6A, 0x7F, 0xAB,
+            0x87, 0xF1, 0x10, 0x46, 0x83, 0x02
+        )
+
+        assertEquals(1, Mode06.decodeRecords(raw, 0x83).size)
+    }
+
+    @Test
     fun `a real zero is not mistaken for a missing result`() {
         // Value 0 against a real limit is a test that ran and scored zero.
-        val record = Mode06.decodeRecords(0x83, bytes(0x02, 0x00, 0x00, 0x6C, 0x08)).single()
+        val record = Mode06.decodeRecords(
+            bytes(0x87, 0xF1, 0x10, 0x46, 0x83, 0x02, 0x00, 0x00, 0x6C, 0x08, 0x00), 0x83
+        ).single()
 
         assertFalse(record.noResult)
         assertEquals(0.0, record.ratio!!, 0.0)
@@ -79,17 +122,11 @@ class Mode06Test {
 
     @Test
     fun `a limit of zero yields no ratio instead of dividing by zero`() {
-        assertNull(Mode06.decodeRecords(0x81, bytes(0x01, 0x00, 0x05, 0x00, 0x00)).single().ratio)
-    }
-
-    @Test
-    fun `a trailing partial record is dropped, not padded`() {
-        val payload = bytes(0x01, 0x00, 0x0A, 0x00, 0x0A, 0x02, 0x00)
-
-        val records = Mode06.decodeRecords(0x85, payload)
-
-        assertEquals(1, records.size)
-        assertEquals(0x01, records.single().cid)
+        assertNull(
+            Mode06.decodeRecords(
+                bytes(0x87, 0xF1, 0x10, 0x46, 0x81, 0x01, 0x00, 0x05, 0x00, 0x00, 0x00), 0x81
+            ).single().ratio
+        )
     }
 
     @Test
@@ -103,8 +140,11 @@ class Mode06Test {
     fun `formatting calls out the never-run test in words`() {
         val text = Mode06.format(
             Mode06.decodeRecords(
-                0x83,
-                bytes(0x02, 0x62, 0xE8, 0x6C, 0x08, 0x03, 0x00, 0x00, 0xFF, 0xFF)
+                bytes(
+                    0x87, 0xF1, 0x10, 0x46, 0x83, 0x02, 0x62, 0xE8, 0x6C, 0x08, 0x11,
+                    0x87, 0xF1, 0x10, 0x46, 0x83, 0x03, 0x00, 0x00, 0xFF, 0xFF, 0x52
+                ),
+                0x83
             )
         )
 

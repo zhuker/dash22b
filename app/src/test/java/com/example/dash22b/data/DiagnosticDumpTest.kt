@@ -72,8 +72,9 @@ class DiagnosticDumpTest {
                 DiagnosticDump.Entry(
                     probe = "0683", mode = 0x06, pid = 0x83,
                     label = "Mode 06 TID 83", why = "EVAP",
-                    responseHex = "...",
-                    dataHex = "02 62 E8 6C 08 03 00 00 FF FF"
+                    responseHex = "87 F1 10 46 83 02 62 E8 6C 08 11 " +
+                        "87 F1 10 46 83 03 00 00 FF FF 52",
+                    dataHex = "02 62 E8 6C 08 11 87 F1 10 46 83 03 00 00 FF FF 52"
                 )
             )
         )

@@ -2,6 +2,7 @@ package com.example.dash22b.data
 
 import com.example.dash22b.BuildConfig
 import com.example.dash22b.obd.Mode06
+import com.example.dash22b.obd.Mode09
 import com.example.dash22b.obd.Obd2SerialManager
 import com.example.dash22b.obd.ObdProbe
 import java.io.File
@@ -52,10 +53,19 @@ object DiagnosticDump {
         val nrc: Int? = null,
         val error: String? = null
     ) {
-        /** The payload as bytes, dropping the trailing frame checksum the raw hex keeps. */
-        fun dataBytes(): ByteArray {
-            val parts = dataHex?.trim()?.split(" ")?.filter { it.isNotBlank() } ?: return ByteArray(0)
-            return ByteArray(parts.size) { parts[it].toInt(16).toByte() }
+        /** The payload bytes as captured. */
+        fun dataBytes(): ByteArray = hexToBytes(dataHex)
+
+        /** The whole exchange as captured, echo included — what multi-message decoding needs. */
+        fun rawBytes(): ByteArray = hexToBytes(responseHex)
+
+        private fun hexToBytes(hex: String?): ByteArray {
+            val parts = hex?.trim()?.split(" ")?.filter { it.isNotBlank() } ?: return ByteArray(0)
+            return try {
+                ByteArray(parts.size) { parts[it].toInt(16).toByte() }
+            } catch (e: NumberFormatException) {
+                ByteArray(0)
+            }
         }
     }
 
@@ -73,6 +83,17 @@ object DiagnosticDump {
 
     /** `06 00`, `06 20`, ... return a support bitmask, not test records. */
     private val SUPPORTED_TID_BASES = setOf(0x00, 0x20, 0x40, 0x60, 0x80)
+
+    /** VIN / Cal ID / CVN rendered as text, since that is the form worth reading. */
+    private fun describeVehicleInfo(entry: Entry): String {
+        val raw = entry.rawBytes()
+        return when (entry.pid) {
+            Mode09.PID_VIN -> Mode09.text(raw, Mode09.PID_VIN)
+            Mode09.PID_CAL_ID -> Mode09.calibrationIds(raw).joinToString(", ")
+            Mode09.PID_CVN -> Mode09.calibrationVerificationNumbers(raw).joinToString(", ")
+            else -> entry.dataHex ?: ""
+        }.ifBlank { entry.dataHex ?: "" }
+    }
 
     /**
      * Runs [probes] against an already-connected [obd] and returns the capture.
@@ -219,8 +240,13 @@ object DiagnosticDump {
                 // Mode $06 test records are decodable now that the sweep established the
                 // layout, and the decoded form is the whole point -- "never run" and
                 // "91.6% of limit" are the answers; the hex is in the file.
+                // Mode $06 records and Mode $09 strings both span several KWP messages,
+                // so they are decoded from the raw capture rather than the flat payload —
+                // see Obd2Frame.frames.
                 entry.mode == 0x06 && entry.pid !in SUPPORTED_TID_BASES ->
-                    append(Mode06.format(Mode06.decodeRecords(entry.pid, entry.dataBytes())))
+                    append(Mode06.format(Mode06.decodeRecords(entry.rawBytes(), entry.pid)))
+                entry.mode == 0x09 && entry.pid != 0x00 ->
+                    append("\n  ${describeVehicleInfo(entry)}")
                 else -> append("\n  ${entry.dataHex}")
             }
         }

@@ -85,18 +85,21 @@ object Mode06 {
         LABELS[tid to cid] ?: "TID %02X CID %02X".format(tid, cid)
 
     /**
-     * Splits a Mode $06 payload into records.
+     * Reads the test records for [tid] out of a raw K-line capture.
      *
-     * [payload] is the concatenation of every frame's bytes after the `46 <TID>` header.
-     * A trailing fragment shorter than a record is dropped rather than padded — a partial
-     * record is unreadable, and guessing at its missing bytes would put an invented test
-     * result next to real ones.
+     * **Takes the raw response, not a flat payload.** The ECU sends one record per KWP
+     * message, so the bytes between records are a checksum and the next message's header.
+     * Chunking a flat payload by five instead produces records that decode without error
+     * and are entirely fictional — the first is right and everything after it is
+     * misaligned garbage, which is worse than a parse failure because nothing looks wrong.
+     *
+     * A message carrying fewer than [RECORD_LENGTH] bytes is skipped rather than padded.
      */
-    fun decodeRecords(tid: Int, payload: ByteArray): List<Record> =
-        (payload.indices step RECORD_LENGTH)
-            .filter { it + RECORD_LENGTH <= payload.size }
-            .map { i ->
-                fun b(o: Int) = payload[i + o].toInt() and 0xFF
+    fun decodeRecords(raw: ByteArray, tid: Int): List<Record> =
+        Obd2Frame.responseFrames(raw, 0x06, tid)
+            .filter { it.size >= RECORD_LENGTH }
+            .map { rec ->
+                fun b(o: Int) = rec[o].toInt() and 0xFF
                 Record(
                     tid = tid,
                     cid = b(0),
