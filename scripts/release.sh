@@ -109,10 +109,19 @@ fi
 SHA="$(shasum -a 256 "$APK" | cut -d' ' -f1)"
 echo "==> apk sha256: $SHA"
 
+# Archive a named copy alongside past builds. apks/ is gitignored -- it is the
+# local shelf of "which APK is on the head unit right now", kept because the
+# build output dir holds only one unnamed app-debug.apk.
+mkdir -p apks
+ARCHIVED="apks/${TAG}.apk"
+cp "$APK" "$ARCHIVED"
+echo "==> archived: $ARCHIVED"
+
 if [[ "$MODE" == "--local" ]]; then
     echo
     echo "local mode: tagged and built, nothing pushed or published."
     echo "  apk:     $APK"
+    echo "  archive: $ARCHIVED"
     echo "  install: adb install -r $APK"
     echo "  publish: scripts/release.sh $TAG   (after deleting the local tag: git tag -d $TAG)"
     exit 0
@@ -131,4 +140,5 @@ gh release create "$TAG" "$APK" \
 
 echo
 echo "done: $(gh release view "$TAG" --json url -q .url)"
+echo "archived at: $ARCHIVED"
 echo "install with: adb install -r $APK"

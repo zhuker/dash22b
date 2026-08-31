@@ -5,6 +5,23 @@
 - The `example/` folder is for reference only. Never try to compile it or use its code directly.
 - Do not add Co-Authored-By lines to git commits.
 
+## Building an APK
+
+```
+./gradlew assembleDebug
+cp app/build/outputs/apk/debug/app-debug.apk "apks/$(git describe --tags --dirty).apk"
+```
+
+The build output is always the same unnamed `app/build/outputs/apk/debug/app-debug.apk`,
+so **every build gets a named copy in `apks/`**, stamped with `git describe`. That folder is
+gitignored -- it is the local shelf that answers "which APK is on the head unit right now",
+which the build dir cannot. `scripts/release.sh` does this copy itself (named after the tag);
+for an ad-hoc build off an untagged commit, do it by hand as above.
+
+Install with `adb install -r app/build/outputs/apk/debug/app-debug.apk`. Build the *debug*
+variant even for releases: `release.sh` runs `assembleDebug`, because the `release` variant has
+no signing config and would come out unsigned.
+
 ## Versioning and releases
 
 Version identity lives in **git tags**, not in `build.gradle.kts`. `app/build.gradle.kts`
@@ -28,7 +45,8 @@ scripts/release.sh v0.4.0-presets          # tag, build, push, gh release create
 ```
 
 The script tags *before* building (so the APK is stamped with the tag), removes the tag if
-the build fails, and refuses to run on a dirty tree or without a notes file.
+the build fails, refuses to run on a dirty tree or without a notes file, and drops a named
+copy of the APK at `apks/<tag>.apk`.
 
 **Write `release-notes/<tag>.md` first.** Its first non-blank line is the one-sentence
 summary shown on the phone; the whole file becomes the GitHub release body. See
