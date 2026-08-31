@@ -91,7 +91,10 @@ fun DashboardScreen() {
     val engineDataRaw by ssmRepository.engineData.collectAsState()
     // Graph view state, hoisted so portrait and landscape share it.
     var graphWindow by rememberSaveable { mutableStateOf(GraphWindow.FIVE_MIN) }
-    var maximizedGraphId by rememberSaveable { mutableStateOf<Int?>(null) }
+    // One maximized graph *per row*. A single id here would mean maximizing in one row
+    // silently restores whatever was maximized in another, which is not what the layout
+    // does -- a maximized graph only ever takes over its own row.
+    var maximizedGraphIds by rememberSaveable { mutableStateOf(listOf<Int>()) }
 
     val historyStore = LocalHistoryStore.current
     val historyVersion by historyStore.version.collectAsState()
@@ -190,9 +193,9 @@ fun DashboardScreen() {
                                         gaugeConfigs = gaugeConfigs,
                                         window = graphWindow,
                                         onWindowChange = { graphWindow = it },
-                                        maximizedId = maximizedGraphId,
+                                        maximizedIds = maximizedGraphIds,
                                         onToggleMaximize = { id ->
-                                            maximizedGraphId = if (maximizedGraphId == id) null else id
+                                            maximizedGraphIds = toggleMaximized(maximizedGraphIds, id)
                                         }
                                 )
                         ScreenMode.OTHER -> OtherContent(engineData)
@@ -243,9 +246,9 @@ fun DashboardScreen() {
                                         gaugeConfigs = gaugeConfigs,
                                         window = graphWindow,
                                         onWindowChange = { graphWindow = it },
-                                        maximizedId = maximizedGraphId,
+                                        maximizedIds = maximizedGraphIds,
                                         onToggleMaximize = { id ->
-                                            maximizedGraphId = if (maximizedGraphId == id) null else id
+                                            maximizedGraphIds = toggleMaximized(maximizedGraphIds, id)
                                         }
                                 )
                         ScreenMode.OTHER -> OtherContent(engineData)
@@ -792,6 +795,34 @@ private fun SeriesBuffer.lastFinite(): Float? {
     return null
 }
 
+/**
+ * Graph slots as laid out: IDs 2-10 in a 3x3 grid, three per row.
+ *
+ * The single source of truth for row membership. [toggleMaximized] needs it to know which
+ * graphs share a row, and the layout needs it to draw them; deriving it twice is how the
+ * two drift apart.
+ */
+internal val GRAPH_ROWS: List<List<Int>> = (2..10).toList().chunked(3)
+
+/**
+ * Toggles [id]'s maximized state, keeping at most one maximized graph per row.
+ *
+ * A maximized graph takes over its own row and leaves the other rows alone, so maximizing
+ * in one row must not restore a graph maximized in another. Only the clicked graph's own
+ * row is touched.
+ *
+ * Pure so the rule can be tested without a UI.
+ */
+internal fun toggleMaximized(
+    current: List<Int>,
+    id: Int,
+    rows: List<List<Int>> = GRAPH_ROWS
+): List<Int> {
+    if (id in current) return current - id
+    val row = rows.firstOrNull { id in it } ?: return current + id
+    return current.filterNot { it in row } + id
+}
+
 @Composable
 fun GraphsContent(
         data: EngineData,
@@ -800,7 +831,7 @@ fun GraphsContent(
         gaugeConfigs: List<GaugeConfig>,
         window: GraphWindow,
         onWindowChange: (GraphWindow) -> Unit,
-        maximizedId: Int?,
+        maximizedIds: List<Int>,
         onToggleMaximize: (Int) -> Unit
 ) {
     // Graph colors cycle by column: Green, Teal, Orange
@@ -813,14 +844,11 @@ fun GraphsContent(
                 modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
         )
 
-        // IDs 2-10 map to 9 graphs in 3x3 grid
-        val graphIds = (2..10).toList().chunked(3)
-
-        graphIds.forEach { rowIds ->
+        GRAPH_ROWS.forEach { rowIds ->
             Row(modifier = Modifier.weight(1f)) {
                 // A maximized graph takes over its own row; the other rows are untouched,
                 // so the maximized trace is three times wider without losing context.
-                val maximizedInRow = rowIds.firstOrNull { it == maximizedId }
+                val maximizedInRow = rowIds.firstOrNull { it in maximizedIds }
                 val visibleIds = if (maximizedInRow != null) listOf(maximizedInRow) else rowIds
 
                 visibleIds.forEach { gaugeId ->
