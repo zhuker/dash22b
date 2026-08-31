@@ -232,7 +232,9 @@ class Obd2SerialManager(private val context: Context) {
         val requestHex: String,
         val rawHex: String,
         val dataHex: String?,
-        val negative: Boolean
+        val negative: Boolean,
+        /** The negative response code, when the ECU refused. */
+        val nrc: Int? = null
     )
 
     /**
@@ -263,7 +265,8 @@ class Obd2SerialManager(private val context: Context) {
                 requestHex = Obd2Frame.toHex(frame),
                 rawHex = Obd2Frame.toHex(raw),
                 dataHex = data?.let { Obd2Frame.toHex(it) },
-                negative = negative
+                negative = negative,
+                nrc = Obd2Frame.negativeResponseCode(raw, mode)
             )
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Probe %02X%02X failed".format(mode, pid))

@@ -139,6 +139,22 @@ object Obd2Frame {
         return false
     }
 
+    /**
+     * The negative response code from a `7F <mode> <nrc>` frame, or null.
+     *
+     * Worth keeping rather than collapsing to a boolean: KWP2000's 0x12 covers both
+     * "sub-function not supported" and "invalid format", so a TID that refuses with a
+     * *different* code than its neighbours is the lead worth chasing.
+     */
+    fun negativeResponseCode(raw: ByteArray, mode: Int): Int? {
+        for (i in 0 until raw.size - 2) {
+            if ((raw[i].toInt() and 0xFF) == 0x7F && (raw[i + 1].toInt() and 0xFF) == mode) {
+                return raw[i + 2].toInt() and 0xFF
+            }
+        }
+        return null
+    }
+
     fun toHex(bytes: ByteArray): String =
         bytes.joinToString(" ") { "%02X".format(it.toInt() and 0xFF) }
 }

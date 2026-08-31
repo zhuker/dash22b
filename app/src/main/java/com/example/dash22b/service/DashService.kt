@@ -209,6 +209,26 @@ class DashService : Service() {
                         }
                         dtcRepository.setLoading(false)
                     }
+                    is ServiceRequest.RunObdSweep -> {
+                        Timber.i("OBD sweep requested from UI")
+                        dtcRepository.addCarMessage(
+                            "Sweeping every Mode 05/06 test ID — about a minute, gauges stalled."
+                        )
+                        try {
+                            val dump = ssmDataSource.requestObdSweep().await()
+                            if (dump == null) {
+                                dtcRepository.addCarMessage(
+                                    "Could not run the sweep — no generic OBD-II session."
+                                )
+                            } else {
+                                dtcRepository.addCarMessage(DiagnosticDump.summariseSweep(dump))
+                            }
+                        } catch (e: Exception) {
+                            Timber.e(e, "OBD sweep failed")
+                            dtcRepository.addCarMessage("Error running the sweep: ${e.message}")
+                        }
+                        dtcRepository.setLoading(false)
+                    }
                     is ServiceRequest.ClearCodes -> {
                         Timber.i("Clear codes requested from UI")
                         try {

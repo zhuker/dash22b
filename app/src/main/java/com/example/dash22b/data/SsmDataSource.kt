@@ -2,6 +2,7 @@ package com.example.dash22b.data
 
 import android.content.Context
 import com.example.dash22b.obd.Obd2SerialManager
+import com.example.dash22b.obd.ObdProbe
 import com.example.dash22b.obd.ObdReadiness
 import com.example.dash22b.obd.SsmDtcCode
 import com.example.dash22b.obd.SsmEcuInit
@@ -141,6 +142,10 @@ class SsmDataSource(private val context: Context,
     private val pendingDumpRequest =
         AtomicReference<CompletableDeferred<DiagnosticDump.Dump?>?>(null)
 
+    // Pending exhaustive TID sweep (serialized with polling loop).
+    private val pendingSweepRequest =
+        AtomicReference<CompletableDeferred<DiagnosticDump.Dump?>?>(null)
+
     /**
      * Subscribe to specific parameters by name.
      * Only subscribed parameters will be polled from the ECU.
@@ -212,21 +217,38 @@ class SsmDataSource(private val context: Context,
     }
 
     /**
-     * Swaps the cable to generic OBD-II, runs the probe list, writes the capture, and
-     * swaps back. Must be called from the polling loop.
+     * Request an exhaustive Mode $05/$06 TID sweep. Takes about a minute, during which
+     * the gauges are stalled — parked use only.
      */
-    private fun runDiagnosticDump(): DiagnosticDump.Dump? {
+    fun requestObdSweep(): CompletableDeferred<DiagnosticDump.Dump?> {
+        val deferred = CompletableDeferred<DiagnosticDump.Dump?>()
+        pendingSweepRequest.set(deferred)
+        return deferred
+    }
+
+    /**
+     * Swaps the cable to generic OBD-II, runs [probes], writes the capture, and swaps
+     * back. Must be called from the polling loop.
+     */
+    private fun runObdCapture(
+        probes: List<ObdProbe>,
+        filePrefix: String
+    ): DiagnosticDump.Dump? {
         val obd = Obd2SerialManager(context)
         try {
             serialManager.disconnect()
             Thread.sleep(OBD_PROTOCOL_SWAP_DELAY_MS)
 
             if (!obd.connect()) {
-                Timber.tag(TAG).w("Could not establish a generic OBD-II session for the dump")
+                Timber.tag(TAG).w("Could not establish a generic OBD-II session")
                 return null
             }
-            val dump = DiagnosticDump.capture(obd)
-            DiagnosticDump.write(context.getExternalFilesDir(null) ?: context.filesDir, dump)
+            val dump = DiagnosticDump.capture(obd, probes)
+            DiagnosticDump.write(
+                context.getExternalFilesDir(null) ?: context.filesDir,
+                dump,
+                prefix = filePrefix
+            )
             return dump
         } finally {
             obd.disconnect()
@@ -461,12 +483,26 @@ class SsmDataSource(private val context: Context,
                     if (dumpDeferred != null) {
                         Timber.tag(TAG).i("Servicing diagnostic dump request")
                         try {
-                            val dump = runDiagnosticDump()
+                            val dump = runObdCapture(ObdProbe.defaultDump(), DiagnosticDump.FILE_PREFIX)
                             dumpDeferred.complete(dump)
                         } catch (e: Exception) {
                             if (e is CancellationException) throw e
                             Timber.tag(TAG).e(e, "Diagnostic dump failed")
                             dumpDeferred.complete(null)
+                        }
+                    }
+
+                    // Check for pending TID sweep. Longest of the OBD takeovers.
+                    val sweepDeferred = pendingSweepRequest.getAndSet(null)
+                    if (sweepDeferred != null) {
+                        Timber.tag(TAG).i("Servicing OBD sweep request")
+                        try {
+                            val dump = runObdCapture(ObdProbe.sweep(), DiagnosticDump.SWEEP_PREFIX)
+                            sweepDeferred.complete(dump)
+                        } catch (e: Exception) {
+                            if (e is CancellationException) throw e
+                            Timber.tag(TAG).e(e, "OBD sweep failed")
+                            sweepDeferred.complete(null)
                         }
                     }
 

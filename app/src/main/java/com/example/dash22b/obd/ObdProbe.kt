@@ -66,6 +66,44 @@ data class ObdProbe(
         )
 
         /**
+         * Every Mode $06 TID, plus Mode $05, asked one at a time.
+         *
+         * Two rounds of targeted probing both came back NRC 0x12 on every TID the FSM
+         * names, in both the two-byte and three-byte form, while `06 00` answered
+         * positively. At that point the remaining hypotheses are all guesses about a map
+         * nobody has published, and guessing is more expensive than measuring: 288 probes
+         * take about a minute and settle the question completely.
+         *
+         * KWP2000 overloads NRC 0x12 as "subFunctionNotSupported **or** invalidFormat", so
+         * it cannot distinguish "wrong request shape" from "unknown TID" -- which is why
+         * the earlier inference from the bitmask was not decisive. What a sweep gives that
+         * inference cannot: if any TID answers, its number is a fact rather than a reading
+         * of an ambiguous bitmask.
+         *
+         * Mode $05 is included because on pre-CAN vehicles it, not $06, carries the oxygen
+         * sensor test results -- and if this ECU implements $05 but not $06, that is worth
+         * knowing before more effort goes into $06.
+         */
+        fun sweep(): List<ObdProbe> = buildList {
+            for (tid in 0x00..0xFF) {
+                add(
+                    ObdProbe(
+                        0x06, tid, "Mode 06 TID %02X".format(tid),
+                        "Sweep: does this ECU answer any Mode 06 TID at all?"
+                    )
+                )
+            }
+            for (tid in 0x00..0x1F) {
+                add(
+                    ObdProbe(
+                        0x05, tid, "Mode 05 TID %02X".format(tid),
+                        "Sweep: pre-CAN O2 sensor test results live in Mode 05, not 06."
+                    )
+                )
+            }
+        }
+
+        /**
          * The full dump, in the order it is issued.
          *
          * Ordered cheapest-and-most-diagnostic first: if Mode $01 PID $00 comes back empty

@@ -156,6 +156,10 @@ fun MessagesContent() {
             text.equals("obd dump", ignoreCase = true) -> {
                 dtcRepository.requestDiagnosticDump()
             }
+            text.equals("sweep", ignoreCase = true) ||
+            text.equals("debug sweep", ignoreCase = true) -> {
+                dtcRepository.requestObdSweep()
+            }
             text.equals("check readiness", ignoreCase = true) ||
             text.equals("readiness", ignoreCase = true) ||
             text.equals("im readiness", ignoreCase = true) ||
@@ -428,6 +432,9 @@ private fun buildHelpMessage(): String = """
 
     debug -- run a raw generic OBD-II capture (Mode 01/06/09) and save it for
       analysis off the car; pair it with "share logs" (also "dump")
+
+    sweep -- try every Mode 05/06 test ID one at a time and report which the ECU
+      answers. Takes about a minute with the gauges stalled; park first.
 
     help -- this list
 """.trimIndent()

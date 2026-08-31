@@ -42,7 +42,9 @@ class LogArchiver(private val directory: File) {
                     file.name.startsWith(ROTATED_DEBUG_LOG_PREFIX) && file.name.endsWith(".txt") -> Kind.DEBUG_LOG
                     // Diagnostic captures ride out with the logs; they are the whole point
                     // of running the debug command in the first place.
-                    file.name.startsWith(DiagnosticDump.FILE_PREFIX) && file.name.endsWith(".json") -> Kind.OBD_DUMP
+                    (file.name.startsWith(DiagnosticDump.FILE_PREFIX) ||
+                        file.name.startsWith(DiagnosticDump.SWEEP_PREFIX)) &&
+                        file.name.endsWith(".json") -> Kind.OBD_DUMP
                     else -> null
                 }
                 kind?.let { LogFile(file, it) }

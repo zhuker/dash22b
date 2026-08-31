@@ -32,6 +32,9 @@ sealed class ServiceRequest {
      * [CheckReadiness], but it interprets nothing — see [com.example.dash22b.data.DiagnosticDump].
      */
     object RunDiagnosticDump : ServiceRequest()
+
+    /** Exhaustive Mode $05/$06 TID sweep. Slow (about a minute) and parked-only. */
+    object RunObdSweep : ServiceRequest()
 }
 
 class DtcRepository {
@@ -74,6 +77,11 @@ class DtcRepository {
     fun requestDiagnosticDump() {
         _isLoading.value = true
         Timber.i("DtcRepository: requestDiagnosticDump called, trySend result=${_serviceRequests.trySend(ServiceRequest.RunDiagnosticDump)}")
+    }
+
+    fun requestObdSweep() {
+        _isLoading.value = true
+        Timber.i("DtcRepository: requestObdSweep called, trySend result=${_serviceRequests.trySend(ServiceRequest.RunObdSweep)}")
     }
 
     fun setLoading(loading: Boolean) {

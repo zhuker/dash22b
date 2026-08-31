@@ -153,6 +153,62 @@ class DiagnosticDumpTest {
     }
 
     @Test
+    fun `sweep covers every Mode 06 TID and Mode 05`() {
+        val sweep = ObdProbe.sweep()
+
+        assertEquals(256, sweep.count { it.mode == 0x06 })
+        assertEquals(32, sweep.count { it.mode == 0x05 })
+        assertEquals(256 + 32, sweep.size)
+    }
+
+    @Test
+    fun `sweep summary groups refusals by NRC instead of listing them all`() {
+        val entries = (0x01..0x40).map {
+            DiagnosticDump.Entry(
+                probe = "06%02X".format(it), mode = 0x06, pid = it,
+                label = "TID", why = "sweep",
+                responseHex = "83 F1 10 7F 06 12 1B",
+                negativeResponse = true, nrc = 0x12
+            )
+        } + DiagnosticDump.Entry(
+            probe = "0600", mode = 0x06, pid = 0x00, label = "TID 00", why = "sweep",
+            responseHex = "87 F1 10 46 00 FF 00 00 00 01 CE", dataHex = "FF 00 00 00 01"
+        )
+
+        val text = DiagnosticDump.summariseSweep(dump(*entries.toTypedArray()))
+
+        assertTrue(text, text.contains("1 answered"))
+        assertTrue(text, text.contains("FF 00 00 00 01"))
+        assertTrue(text, text.contains("64 refused"))
+        assertTrue(text, text.contains("NRC 0x12"))
+        // The refusals must not be enumerated one per line.
+        assertTrue(text, text.lines().size < 20)
+    }
+
+    @Test
+    fun `sweep summary reports when nothing answered`() {
+        val text = DiagnosticDump.summariseSweep(
+            dump(
+                DiagnosticDump.Entry(
+                    probe = "0601", mode = 0x06, pid = 1, label = "x", why = "y",
+                    negativeResponse = true, nrc = 0x12
+                )
+            )
+        )
+
+        assertTrue(text, text.contains("Nothing answered"))
+    }
+
+    @Test
+    fun `sweeps are archived under their own prefix and still shareable`() {
+        val dir = temp.newFolder("logs")
+        val file = DiagnosticDump.write(dir, dump(entry("0101")), now = 0L, prefix = DiagnosticDump.SWEEP_PREFIX)
+
+        assertTrue(file.name.startsWith(DiagnosticDump.SWEEP_PREFIX))
+        assertEquals(LogArchiver.Kind.OBD_DUMP, LogArchiver(dir).list().single().kind)
+    }
+
+    @Test
     fun `summary points at share logs, since the file is the deliverable`() {
         assertTrue(DiagnosticDump.summarise(dump(entry("0101"))).contains("share logs"))
     }

@@ -33,6 +33,9 @@ object DiagnosticDump {
     /** Prefix for dump files; [LogArchiver] lists these so they can be shared. */
     const val FILE_PREFIX = "obd_dump_"
 
+    /** Prefix for sweep captures, which are large and separate from a normal dump. */
+    const val SWEEP_PREFIX = "obd_sweep_"
+
     @Serializable
     data class Entry(
         val probe: String,
@@ -44,6 +47,8 @@ object DiagnosticDump {
         val responseHex: String? = null,
         val dataHex: String? = null,
         val negativeResponse: Boolean = false,
+        /** KWP2000 negative response code, when the ECU refused. */
+        val nrc: Int? = null,
         val error: String? = null
     )
 
@@ -92,7 +97,8 @@ object DiagnosticDump {
                     requestHex = result.requestHex,
                     responseHex = result.rawHex,
                     dataHex = result.dataHex,
-                    negativeResponse = result.negative
+                    negativeResponse = result.negative,
+                    nrc = result.nrc
                 )
             }
         }
@@ -113,12 +119,74 @@ object DiagnosticDump {
      * between a capture taken before a monitor ran and one taken after, so an old dump is
      * the more valuable half of the pair.
      */
-    fun write(directory: File, dump: Dump, now: Long = System.currentTimeMillis()): File {
+    fun write(
+        directory: File,
+        dump: Dump,
+        now: Long = System.currentTimeMillis(),
+        prefix: String = FILE_PREFIX
+    ): File {
         directory.mkdirs()
-        val file = File(directory, "$FILE_PREFIX${fileTimestamp(now)}.json")
+        val file = File(directory, "$prefix${fileTimestamp(now)}.json")
         file.writeText(json.encodeToString(dump))
         Timber.i("Wrote diagnostic dump: ${file.name} (${dump.entries.size} probes)")
         return file
+    }
+
+    /**
+     * Summary for a sweep: the few probes that answered, then the refusals grouped by
+     * negative response code.
+     *
+     * Listing 288 refusals individually would bury the finding. Grouping by NRC keeps the
+     * one thing that distinguishes outcomes — a TID answering with a different code than
+     * its neighbours is a lead, and would otherwise be lost in the scroll.
+     */
+    fun summariseSweep(dump: Dump): String = buildString {
+        val answered = dump.entries.filter { !it.dataHex.isNullOrBlank() }
+        val refused = dump.entries.filter { it.negativeResponse }
+        val silent = dump.entries.filter {
+            it.dataHex.isNullOrBlank() && !it.negativeResponse && it.error == null
+        }
+
+        append("Swept ")
+        append(dump.entries.size)
+        append(" probes over ")
+        append(dump.protocol)
+        append(".\n\n")
+
+        if (answered.isEmpty()) {
+            append("Nothing answered.")
+        } else {
+            append(answered.size)
+            append(" answered:")
+            answered.forEach {
+                append("\n  ")
+                append(it.probe)
+                append("  ")
+                append(it.dataHex)
+            }
+        }
+
+        if (refused.isNotEmpty()) {
+            append("\n\n")
+            append(refused.size)
+            append(" refused, by code:")
+            refused.groupBy { it.nrc }.toSortedMap(compareBy { it ?: -1 }).forEach { (nrc, list) ->
+                append("\n  NRC ")
+                append(nrc?.let { "0x%02X".format(it) } ?: "?")
+                append(": ")
+                append(list.size)
+                append(" (")
+                append(list.take(4).joinToString(", ") { it.probe })
+                if (list.size > 4) append(", ...")
+                append(")")
+            }
+        }
+        if (silent.isNotEmpty()) {
+            append("\n\n")
+            append(silent.size)
+            append(" got no response at all.")
+        }
+        append("\n\nFull capture saved — send it with \"share logs\".")
     }
 
     /** One-line-per-probe summary for the chat, kept short; the file has the detail. */
