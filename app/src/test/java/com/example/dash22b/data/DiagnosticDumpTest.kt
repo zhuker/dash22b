@@ -53,6 +53,27 @@ class DiagnosticDumpTest {
     }
 
     @Test
+    fun `the dump probes the three-byte TID CID form the car's NRC 0x12 points at`() {
+        val threeByte = ObdProbe.defaultDump().filter { it.mode == 0x06 && it.extra.isNotEmpty() }
+
+        assertEquals(ObdProbe.FSM_MODE06_CID_PAIRS.size, threeByte.size)
+        // The 0.020 in test is the very small leak, CID 03 -- not CID 02.
+        assertTrue(
+            threeByte.any { it.pid == 0x03 && it.extra == listOf(0x03) }
+        )
+        assertEquals("060303", threeByte.first { it.pid == 0x03 && it.extra == listOf(0x03) }.id)
+    }
+
+    @Test
+    fun `two and three byte Mode 06 probes are distinguishable in the capture`() {
+        val ids = ObdProbe.defaultDump().map { it.id }
+
+        assertEquals(ids.size, ids.toSet().size)
+        assertTrue(ids.contains("0603"))
+        assertTrue(ids.contains("060302"))
+    }
+
+    @Test
     fun `the dump asks for Cal ID and CVN, which the smog check compares`() {
         val mode09 = ObdProbe.defaultDump().filter { it.mode == 0x09 }.map { it.pid }
 

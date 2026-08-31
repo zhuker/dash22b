@@ -144,6 +144,27 @@ class Obd2FrameTest {
     }
 
     @Test
+    fun `three-byte Mode 06 request encodes length in the format byte`() {
+        val frame = Obd2Frame.buildRequest(Obd2Frame.Format.KWP2000, 0x06, 0x03, 0x03)
+
+        // C3 33 F1 06 03 03, checksum = 0xC3+0x33+0xF1+6+3+3 = 0x1F3 -> 0xF3
+        assertArrayEquals(bytes(0xC3, 0x33, 0xF1, 0x06, 0x03, 0x03, 0xF3), frame)
+    }
+
+    @Test
+    fun `the two-argument builder still matches the frame the car accepted`() {
+        assertArrayEquals(
+            Obd2Frame.buildRequest(Obd2Frame.Format.KWP2000, 0x01, 0x01),
+            Obd2Frame.buildRequest(0x01, 0x01, Obd2Frame.Format.KWP2000)
+        )
+        // Captured echo from the car: C2 33 F1 01 01 E8
+        assertArrayEquals(
+            bytes(0xC2, 0x33, 0xF1, 0x01, 0x01, 0xE8),
+            Obd2Frame.buildRequest(0x01, 0x01, Obd2Frame.Format.KWP2000)
+        )
+    }
+
+    @Test
     fun `positive response mode is request plus 0x40`() {
         assertEquals(0x41, Obd2Frame.positiveResponseMode(0x01))
         assertEquals(0x49, Obd2Frame.positiveResponseMode(0x09))

@@ -42,8 +42,19 @@ object Obd2Frame {
      * high bits marking "address information included" — for a two-byte service request
      * that is 0xC2.
      */
-    fun buildRequest(mode: Int, pid: Int, format: Format): ByteArray {
-        val payload = intArrayOf(mode, pid)
+    fun buildRequest(mode: Int, pid: Int, format: Format): ByteArray =
+        buildRequest(format, mode, pid)
+
+    /**
+     * Builds a request with an arbitrary payload.
+     *
+     * Mode $06 needs this: the car rejected every two-byte `06 TID` request with negative
+     * response code 0x12 (subFunctionNotSupported / **invalid format**) while answering
+     * `06 00` positively — the shape of the request is wrong, not the TID. The FSM lists
+     * this ECU's tests as TID *and* CID pairs, so the three-byte `06 TID CID` form is the
+     * one to try, and that needs a builder that is not fixed at two bytes.
+     */
+    fun buildRequest(format: Format, vararg payload: Int): ByteArray {
         val header = when (format) {
             Format.ISO9141 -> ISO9141_HEADER
             Format.KWP2000 -> intArrayOf(0xC0 or payload.size, TARGET_ECU, SOURCE_TESTER)

@@ -71,7 +71,7 @@ object DiagnosticDump {
         now: Long = System.currentTimeMillis()
     ): Dump {
         val entries = probes.map { probe ->
-            val result = obd.probe(probe.mode, probe.pid)
+            val result = obd.probe(probe.mode, probe.pid, probe.extra)
             if (result == null) {
                 Timber.w("Probe ${probe.id} could not be sent")
                 Entry(

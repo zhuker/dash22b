@@ -241,13 +241,14 @@ class Obd2SerialManager(private val context: Context) {
      * Never returns null for "no data": a probe that got a negative response, or an empty
      * one, is itself a finding. Null means the request could not be sent at all.
      */
-    fun probe(mode: Int, pid: Int): ProbeResult? {
+    fun probe(mode: Int, pid: Int, extra: List<Int> = emptyList()): ProbeResult? {
         val activePort = port ?: return null
         val activeFormat = format ?: return null
 
         return try {
             Thread.sleep(INTER_REQUEST_DELAY_MS)
-            val frame = Obd2Frame.buildRequest(mode, pid, activeFormat)
+            val payload = (listOf(mode, pid) + extra).toIntArray()
+            val frame = Obd2Frame.buildRequest(activeFormat, *payload)
             activePort.write(frame, WRITE_TIMEOUT_MS)
             val raw = drainResponse(activePort)
 
