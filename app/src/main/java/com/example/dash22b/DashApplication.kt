@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.Application
 import android.os.Bundle
 import android.util.Log
+import com.example.dash22b.data.LogArchiver
 import com.example.dash22b.data.SsmDataSource
 import com.example.dash22b.di.AppContainer
 import com.example.dash22b.obd.SsmSerialManager
@@ -117,11 +118,13 @@ class DashApplication : Application() {
     }
 
     private fun rotateLogs() {
-        val logFile = File(getExternalFilesDir(null), "app_logs.txt")
+        val logFile = File(getExternalFilesDir(null), LogArchiver.ACTIVE_DEBUG_LOG)
         Log.d("DashApplication", "log file $logFile")
-        if (logFile.exists()) {
+        // A truncated log is what "clear logs" leaves behind; rotating it would only
+        // create an empty backup, so start this session in the file that is already there.
+        if (logFile.exists() && logFile.length() > 0L) {
             val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date(logFile.lastModified()))
-            val backupFile = File(getExternalFilesDir(null), "app_logs_$timestamp.txt")
+            val backupFile = File(getExternalFilesDir(null), "${LogArchiver.ROTATED_DEBUG_LOG_PREFIX}$timestamp.txt")
             if (logFile.renameTo(backupFile)) {
                 Log.i("DashApplication", "Log file rotated: ${backupFile.name}")
             } else {
@@ -143,7 +146,7 @@ class DashApplication : Application() {
         
         init {
             scope.launch {
-                val logFile = File(getExternalFilesDir(null), "app_logs.txt")
+                val logFile = File(getExternalFilesDir(null), LogArchiver.ACTIVE_DEBUG_LOG)
                 var writer: FileWriter? = null
                 try {
                     writer = FileWriter(logFile, true)

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the share staging dir is exposed. Log archives are built into
+     cacheDir/shared-logs and handed to the share sheet as content:// URIs. -->
+<paths>
+    <cache-path name="shared-logs" path="shared-logs/" />
+</paths>

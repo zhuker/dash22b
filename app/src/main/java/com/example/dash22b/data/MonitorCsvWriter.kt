@@ -66,17 +66,24 @@ class MonitorCsvWriter(
 
     private suspend fun writeSamples() {
         var writer: BufferedWriter? = null
+        var file: File? = null
         var columns: List<Column> = emptyList()
         var rowsSinceFlush = 0
 
         try {
             for (sample in samples) {
                 val sampleColumns = sample.values.map { (name, value) -> Column(name, value.unit) }
-                if (sampleColumns != columns) {
+                // Reopen on a column change, and also if the file went away underneath us --
+                // "clear logs" in the Messages tab can delete the recording in progress, and
+                // an open handle would otherwise keep writing to an unlinked inode nobody
+                // can read.
+                val fileGone = file?.exists() == false
+                if (sampleColumns != columns || fileGone) {
                     writer?.flush()
                     writer?.close()
                     columns = sampleColumns
-                    writer = openFile(sample.timestamp, columns)
+                    file = nextFile(sample.timestamp)
+                    writer = openFile(file, columns)
                     rowsSinceFlush = 0
                 }
 
@@ -107,15 +114,19 @@ class MonitorCsvWriter(
         }
     }
 
-    private fun openFile(timestamp: Long, columns: List<Column>): BufferedWriter {
-        val baseName = "monitor_${formatFilenameTimestamp(timestamp)}"
+    private fun nextFile(timestamp: Long): File {
+        val baseName = "${LogArchiver.MONITOR_CSV_PREFIX}${formatFilenameTimestamp(timestamp)}"
         var file = File(directory, "$baseName.csv")
         var suffix = 2
         while (file.exists()) {
             file = File(directory, "${baseName}_$suffix.csv")
             suffix++
         }
+        return file
+    }
 
+    private fun openFile(file: File, columns: List<Column>): BufferedWriter {
+        directory.mkdirs()
         return BufferedWriter(FileWriter(file, false)).also { writer ->
             writer.append("timestamp")
             columns.forEach { column ->

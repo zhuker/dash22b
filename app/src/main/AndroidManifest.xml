@@ -41,6 +41,18 @@
                 android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
                 android:resource="@xml/device_filter" />
         </activity>
+        <!-- Hands log archives (cacheDir/shared-logs) to the share sheet as content://
+             URIs, so "share logs" in the Messages tab can reach Drive, mail, etc. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
     <service
             android:name=".service.DashService"
             android:enabled="true"

@@ -39,8 +39,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -48,8 +50,12 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.example.dash22b.BuildConfig
 import com.example.dash22b.data.ChatMessage
+import com.example.dash22b.data.LogArchiver
+import com.example.dash22b.data.LogSharing
 import com.example.dash22b.di.LocalDtcRepository
 import com.example.dash22b.obd.SsmDtcCode
+import kotlinx.coroutines.launch
+import timber.log.Timber
 
 @Composable
 fun MessagesContent() {
@@ -58,6 +64,8 @@ fun MessagesContent() {
     val isLoading by dtcRepository.isLoading.collectAsState()
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     // Auto-scroll to bottom when new messages arrive
     LaunchedEffect(messages.size) {
@@ -71,6 +79,60 @@ fun MessagesContent() {
         if (messages.isEmpty()) {
             dtcRepository.addCarMessage(buildWelcomeMessage())
         }
+    }
+
+    /**
+     * Lists what is on disk, zips it, and opens the share sheet.
+     *
+     * The listing is posted before the zip starts so the reply names the files even if
+     * building the archive then fails -- that list is what tells you whether the drive you
+     * care about was actually recorded.
+     */
+    fun shareLogs() {
+        val archiver = LogSharing.archiver(context)
+        val logs = archiver.list()
+        if (logs.isEmpty()) {
+            dtcRepository.addCarMessage("No logs on disk yet. Monitor CSVs appear once the dashboard has polled the ECU.")
+            return
+        }
+
+        dtcRepository.addCarMessage(describeLogs(logs))
+        dtcRepository.setLoading(true)
+        scope.launch {
+            try {
+                val archive = LogSharing.buildArchive(context, logs)
+                dtcRepository.setLoading(false)
+                dtcRepository.addCarMessage(
+                    "Packed ${logs.size} ${fileWord(logs.size)} into ${archive.name} " +
+                        "(${LogArchiver.formatBytes(archive.length())}). Pick where to upload it."
+                )
+                LogSharing.share(context, archive)
+            } catch (e: Exception) {
+                Timber.e(e, "Could not share logs")
+                dtcRepository.setLoading(false)
+                dtcRepository.addCarMessage("Could not build the log archive: ${e.message ?: e::class.java.simpleName}")
+            }
+        }
+    }
+
+    /** Deletes every log on disk and reports what went away. */
+    fun clearLogs() {
+        val archiver = LogSharing.archiver(context)
+        val before = archiver.list()
+        if (before.isEmpty()) {
+            dtcRepository.addCarMessage("No logs to clear.")
+            return
+        }
+
+        val result = archiver.deleteAll()
+        val freed = LogArchiver.formatBytes(result.freedBytes)
+        val message = buildString {
+            append("Cleared ${result.deleted} ${fileWord(result.deleted)}, freed $freed.")
+            if (result.failed > 0) {
+                append(" ${result.failed} could not be deleted -- check storage permissions.")
+            }
+        }
+        dtcRepository.addCarMessage(message)
     }
 
     fun sendMessage() {
@@ -89,8 +151,22 @@ fun MessagesContent() {
             text.equals("check", ignoreCase = true) -> {
                 dtcRepository.requestDtcRead()
             }
+            text.equals("share logs", ignoreCase = true) ||
+            text.equals("send logs", ignoreCase = true) ||
+            text.equals("upload logs", ignoreCase = true) -> {
+                shareLogs()
+            }
+            text.equals("clear logs", ignoreCase = true) ||
+            text.equals("delete logs", ignoreCase = true) -> {
+                clearLogs()
+            }
+            text.equals("help", ignoreCase = true) ||
+            text.equals("?", ignoreCase = true) ||
+            text.equals("commands", ignoreCase = true) -> {
+                dtcRepository.addCarMessage(buildHelpMessage())
+            }
             else -> {
-                dtcRepository.addCarMessage("I don't understand \"$text\". Try \"read codes\" or \"clear codes\".")
+                dtcRepository.addCarMessage("I don't understand \"$text\". Type \"help\" for the command list.")
             }
         }
     }
@@ -318,6 +394,54 @@ private fun buildWelcomeMessage(): String {
         append(")\n")
         append(BuildConfig.WHATS_NEW)
         append("\n\n")
-        append("Connected to ECU. Type \"read codes\" to scan for trouble codes, or \"clear codes\" to reset.")
+        append("Connected to ECU. Type \"help\" to see what I understand.")
+    }
+}
+
+/**
+ * The command list. Lives here rather than in the welcome banner so the banner stays short
+ * as commands are added -- the banner is also the build-version readout, and that is what
+ * you want to see first when you open the tab.
+ */
+private fun buildHelpMessage(): String = """
+    Commands:
+
+    read codes -- scan the ECU for trouble codes (also "scan", "check")
+    clear codes -- clear stored trouble codes
+
+    share logs -- zip the monitor CSVs and debug logs, then open the share sheet to
+      upload them (also "send logs", "upload logs")
+    clear logs -- delete every log on disk (also "delete logs")
+
+    help -- this list
+""".trimIndent()
+
+/** "1 file" / "3 files" -- keeps the chat replies from reading like a status bar. */
+private fun fileWord(count: Int): String = if (count == 1) "file" else "files"
+
+/**
+ * The chat listing of what is on disk: CSVs and debug logs grouped, newest first, each
+ * with its size, plus a total. This is what the user reads before deciding to upload.
+ */
+private fun describeLogs(logs: List<LogArchiver.LogFile>): String {
+    val total = logs.sumOf { it.bytes }
+    return buildString {
+        append("${logs.size} ${fileWord(logs.size)} on disk (${LogArchiver.formatBytes(total)}):")
+        listOf(
+            "Monitor CSVs" to LogArchiver.Kind.MONITOR_CSV,
+            "Debug logs" to LogArchiver.Kind.DEBUG_LOG
+        ).forEach { (heading, kind) ->
+            val group = logs.filter { it.kind == kind }
+            if (group.isEmpty()) return@forEach
+            append("\n\n")
+            append(heading)
+            append(':')
+            group.forEach { log ->
+                append("\n  ")
+                append(log.name)
+                append("  ")
+                append(LogArchiver.formatBytes(log.bytes))
+            }
+        }
     }
 }
