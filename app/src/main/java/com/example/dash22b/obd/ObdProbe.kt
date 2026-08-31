@@ -45,6 +45,21 @@ data class ObdProbe(
         )
 
         /**
+         * The TIDs this ECU actually implements, found by sweeping all 256 on 2026-08-30.
+         *
+         * The FSM's numbers ($01, $03, $05...) are refused; the live tests sit $80 higher,
+         * plus one at $41. TID $83 is the EVAP leak family -- three CIDs matching the FSM's
+         * large / small / very small rows.
+         */
+        val LIVE_MODE06_TIDS: List<Pair<Int, String>> = listOf(
+            0x41 to "Unmapped test family (2 records)",
+            0x81 to "Catalyst efficiency",
+            0x83 to "EVAP leak tests (large / 0.040 in / 0.020 in)",
+            0x84 to "Unmapped test family",
+            0x85 to "O2 sensor tests"
+        )
+
+        /**
          * TID/CID pairs exactly as the FSM tabulates them (EN(STi)(diag)-25).
          *
          * The EVAP row is the reason this work exists: CID $02 and $03 are the small and
@@ -126,37 +141,20 @@ data class ObdProbe(
                 )
             )
 
-            // Mode $06 -- the reason this dump exists.
-            add(
-                ObdProbe(
-                    0x06, 0x00, "Mode 06 supported TIDs (bonus)",
-                    "CAN-era convention; may not exist here. A negative response is a normal " +
-                        "outcome, not evidence Mode 06 is unsupported."
-                )
-            )
-            FSM_MODE06_TIDS.forEach { (tid, desc) ->
-                add(ObdProbe(0x06, tid, "Mode 06 TID %02X".format(tid), desc))
-            }
-
-            // Three-byte form: 06 TID CID.
-            //
-            // The car answered `06 00` positively but rejected every `06 TID` with NRC
-            // 0x12 -- subFunctionNotSupported / invalid *format*. That is a complaint
-            // about the request's shape, not about the TID being unknown (which would be
-            // 0x31, requestOutOfRange), and the supported-TID bitmask came back FF 00 00
-            // 00, i.e. TIDs 01-08 present. The FSM lists these tests as TID/CID pairs, so
-            // the missing byte is very likely the CID.
-            FSM_MODE06_CID_PAIRS.forEach { (pair, desc) ->
-                val (tid, cid) = pair
+            // Mode $06 -- the reason this dump exists. These are the TIDs the sweep
+            // proved live; the FSM's own numbering is refused by this ECU.
+            listOf(0x00, 0x20, 0x40, 0x60, 0x80).forEach { base ->
                 add(
                     ObdProbe(
-                        0x06, tid,
-                        "Mode 06 TID %02X CID %02X".format(tid, cid),
-                        desc,
-                        extra = listOf(cid)
+                        0x06, base, "Mode 06 supported TIDs from %02X".format(base),
+                        "Bitmask chain; confirms the TID map has not changed."
                     )
                 )
             }
+            LIVE_MODE06_TIDS.forEach { (tid, desc) ->
+                add(ObdProbe(0x06, tid, "Mode 06 TID %02X".format(tid), desc))
+            }
+
 
             // Mode $09 -- vehicle info. Cal ID and CVN are what a CA Smog Check compares
             // against the expected calibration, so reading them here lets the car report

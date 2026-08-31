@@ -41,36 +41,46 @@ class DiagnosticDumpTest {
     )
 
     @Test
-    fun `the probe list covers the FSM's documented Mode 06 TIDs`() {
-        val probes = ObdProbe.defaultDump()
-        val mode06 = probes.filter { it.mode == 0x06 }.map { it.pid }
+    fun `the dump probes the TIDs the sweep proved live, not the FSM's numbering`() {
+        val mode06 = ObdProbe.defaultDump().filter { it.mode == 0x06 }.map { it.pid }
 
-        ObdProbe.FSM_MODE06_TIDS.map { it.first }.forEach {
+        // Found by sweeping all 256 TIDs on the car: the live tests sit $80 above the
+        // FSM's numbers, plus one at $41.
+        listOf(0x41, 0x81, 0x83, 0x84, 0x85).forEach {
             assertTrue("TID %02X missing".format(it), mode06.contains(it))
         }
-        // Plus the speculative support bitmask.
-        assertTrue(mode06.contains(0x00))
+        // The FSM's own TIDs are refused by this ECU; probing them again is wasted time.
+        listOf(0x01, 0x03, 0x05, 0x07, 0x0C, 0x0F).forEach {
+            assertFalse("TID %02X should no longer be probed".format(it), mode06.contains(it))
+        }
     }
 
     @Test
-    fun `the dump probes the three-byte TID CID form the car's NRC 0x12 points at`() {
-        val threeByte = ObdProbe.defaultDump().filter { it.mode == 0x06 && it.extra.isNotEmpty() }
+    fun `the dump re-reads the whole support bitmask chain`() {
+        val mode06 = ObdProbe.defaultDump().filter { it.mode == 0x06 }.map { it.pid }
 
-        assertEquals(ObdProbe.FSM_MODE06_CID_PAIRS.size, threeByte.size)
-        // The 0.020 in test is the very small leak, CID 03 -- not CID 02.
-        assertTrue(
-            threeByte.any { it.pid == 0x03 && it.extra == listOf(0x03) }
+        // Cheap insurance: if the TID map ever changes, the chain shows it.
+        listOf(0x00, 0x20, 0x40, 0x60, 0x80).forEach {
+            assertTrue("base %02X missing".format(it), mode06.contains(it))
+        }
+    }
+
+    @Test
+    fun `dump summary decodes Mode 06 records rather than printing hex`() {
+        val text = DiagnosticDump.summarise(
+            dump(
+                DiagnosticDump.Entry(
+                    probe = "0683", mode = 0x06, pid = 0x83,
+                    label = "Mode 06 TID 83", why = "EVAP",
+                    responseHex = "...",
+                    dataHex = "02 62 E8 6C 08 03 00 00 FF FF"
+                )
+            )
         )
-        assertEquals("060303", threeByte.first { it.pid == 0x03 && it.extra == listOf(0x03) }.id)
-    }
 
-    @Test
-    fun `two and three byte Mode 06 probes are distinguishable in the capture`() {
-        val ids = ObdProbe.defaultDump().map { it.id }
-
-        assertEquals(ids.size, ids.toSet().size)
-        assertTrue(ids.contains("0603"))
-        assertTrue(ids.contains("060302"))
+        assertTrue(text, text.contains("EVAP small leak (0.040 in)"))
+        assertTrue(text, text.contains("91.6% of limit"))
+        assertTrue(text, text.contains("never run"))
     }
 
     @Test

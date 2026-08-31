@@ -1,6 +1,7 @@
 package com.example.dash22b.data
 
 import com.example.dash22b.BuildConfig
+import com.example.dash22b.obd.Mode06
 import com.example.dash22b.obd.Obd2SerialManager
 import com.example.dash22b.obd.ObdProbe
 import java.io.File
@@ -50,7 +51,13 @@ object DiagnosticDump {
         /** KWP2000 negative response code, when the ECU refused. */
         val nrc: Int? = null,
         val error: String? = null
-    )
+    ) {
+        /** The payload as bytes, dropping the trailing frame checksum the raw hex keeps. */
+        fun dataBytes(): ByteArray {
+            val parts = dataHex?.trim()?.split(" ")?.filter { it.isNotBlank() } ?: return ByteArray(0)
+            return ByteArray(parts.size) { parts[it].toInt(16).toByte() }
+        }
+    }
 
     @Serializable
     data class Dump(
@@ -63,6 +70,9 @@ object DiagnosticDump {
     )
 
     private val json = Json { prettyPrint = true; encodeDefaults = true }
+
+    /** `06 00`, `06 20`, ... return a support bitmask, not test records. */
+    private val SUPPORTED_TID_BASES = setOf(0x00, 0x20, 0x40, 0x60, 0x80)
 
     /**
      * Runs [probes] against an already-connected [obd] and returns the capture.
@@ -202,15 +212,17 @@ object DiagnosticDump {
             append(entry.probe)
             append(' ')
             append(entry.label)
-            append("\n  ")
-            append(
-                when {
-                    entry.error != null -> "-- ${entry.error}"
-                    entry.negativeResponse -> "-- negative response (not supported)"
-                    entry.dataHex.isNullOrBlank() -> "-- no data (raw: ${entry.responseHex})"
-                    else -> entry.dataHex
-                }
-            )
+            when {
+                entry.error != null -> append("\n  -- ${entry.error}")
+                entry.negativeResponse -> append("\n  -- negative response (not supported)")
+                entry.dataHex.isNullOrBlank() -> append("\n  -- no data (raw: ${entry.responseHex})")
+                // Mode $06 test records are decodable now that the sweep established the
+                // layout, and the decoded form is the whole point -- "never run" and
+                // "91.6% of limit" are the answers; the hex is in the file.
+                entry.mode == 0x06 && entry.pid !in SUPPORTED_TID_BASES ->
+                    append(Mode06.format(Mode06.decodeRecords(entry.pid, entry.dataBytes())))
+                else -> append("\n  ${entry.dataHex}")
+            }
         }
 
         val answered = dump.entries.count { !it.dataHex.isNullOrBlank() }
