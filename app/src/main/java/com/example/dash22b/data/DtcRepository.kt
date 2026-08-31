@@ -26,6 +26,12 @@ sealed class ServiceRequest {
      * back afterwards.
      */
     object CheckReadiness : ServiceRequest()
+
+    /**
+     * Capture raw generic OBD-II responses for offline analysis. Same K-line takeover as
+     * [CheckReadiness], but it interprets nothing — see [com.example.dash22b.data.DiagnosticDump].
+     */
+    object RunDiagnosticDump : ServiceRequest()
 }
 
 class DtcRepository {
@@ -63,6 +69,11 @@ class DtcRepository {
     fun requestReadiness() {
         _isLoading.value = true
         Timber.i("DtcRepository: requestReadiness called, trySend result=${_serviceRequests.trySend(ServiceRequest.CheckReadiness)}")
+    }
+
+    fun requestDiagnosticDump() {
+        _isLoading.value = true
+        Timber.i("DtcRepository: requestDiagnosticDump called, trySend result=${_serviceRequests.trySend(ServiceRequest.RunDiagnosticDump)}")
     }
 
     fun setLoading(loading: Boolean) {

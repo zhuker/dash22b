@@ -25,7 +25,7 @@ class LogArchiver(private val directory: File) {
         val bytes: Long get() = file.length()
     }
 
-    enum class Kind { MONITOR_CSV, DEBUG_LOG }
+    enum class Kind { MONITOR_CSV, DEBUG_LOG, OBD_DUMP }
 
     /**
      * Every log currently on disk, newest first. The active debug log sorts in with the
@@ -40,6 +40,9 @@ class LogArchiver(private val directory: File) {
                     file.name.endsWith(".csv") && file.name.startsWith(MONITOR_CSV_PREFIX) -> Kind.MONITOR_CSV
                     file.name == ACTIVE_DEBUG_LOG -> Kind.DEBUG_LOG
                     file.name.startsWith(ROTATED_DEBUG_LOG_PREFIX) && file.name.endsWith(".txt") -> Kind.DEBUG_LOG
+                    // Diagnostic captures ride out with the logs; they are the whole point
+                    // of running the debug command in the first place.
+                    file.name.startsWith(DiagnosticDump.FILE_PREFIX) && file.name.endsWith(".json") -> Kind.OBD_DUMP
                     else -> null
                 }
                 kind?.let { LogFile(file, it) }

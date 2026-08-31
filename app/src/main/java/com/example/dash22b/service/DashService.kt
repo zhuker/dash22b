@@ -16,6 +16,7 @@ import com.example.dash22b.MainActivity
 import com.example.dash22b.R
 import com.example.dash22b.data.DtcRepository
 import com.example.dash22b.data.ServiceRequest
+import com.example.dash22b.data.DiagnosticDump
 import com.example.dash22b.data.ReadinessMessage
 import com.example.dash22b.data.ParameterRegistry
 import com.example.dash22b.data.MonitorCsvWriter
@@ -187,6 +188,24 @@ class DashService : Service() {
                         } catch (e: Exception) {
                             Timber.e(e, "Readiness check failed")
                             dtcRepository.addCarMessage("Error reading readiness monitors: ${e.message}")
+                        }
+                        dtcRepository.setLoading(false)
+                    }
+                    is ServiceRequest.RunDiagnosticDump -> {
+                        Timber.i("Diagnostic dump requested from UI")
+                        try {
+                            val dump = ssmDataSource.requestDiagnosticDump().await()
+                            if (dump == null) {
+                                dtcRepository.addCarMessage(
+                                    "Could not run the OBD dump — no generic OBD-II session. " +
+                                        "Check the cable and that the key is on."
+                                )
+                            } else {
+                                dtcRepository.addCarMessage(DiagnosticDump.summarise(dump))
+                            }
+                        } catch (e: Exception) {
+                            Timber.e(e, "Diagnostic dump failed")
+                            dtcRepository.addCarMessage("Error running the OBD dump: ${e.message}")
                         }
                         dtcRepository.setLoading(false)
                     }

@@ -220,6 +220,59 @@ class Obd2SerialManager(private val context: Context) {
         }
     }
 
+    /**
+     * Result of one probe, kept as close to the wire as possible.
+     *
+     * Both the frame sent and everything heard back are retained verbatim: on an
+     * undocumented pre-CAN map the bytes we could not interpret are exactly the ones worth
+     * keeping, and a dump that stores only what today's code understands cannot answer
+     * tomorrow's question.
+     */
+    data class ProbeResult(
+        val requestHex: String,
+        val rawHex: String,
+        val dataHex: String?,
+        val negative: Boolean
+    )
+
+    /**
+     * Issues [mode]/[pid] and returns the exchange without interpreting the payload.
+     *
+     * Never returns null for "no data": a probe that got a negative response, or an empty
+     * one, is itself a finding. Null means the request could not be sent at all.
+     */
+    fun probe(mode: Int, pid: Int): ProbeResult? {
+        val activePort = port ?: return null
+        val activeFormat = format ?: return null
+
+        return try {
+            Thread.sleep(INTER_REQUEST_DELAY_MS)
+            val frame = Obd2Frame.buildRequest(mode, pid, activeFormat)
+            activePort.write(frame, WRITE_TIMEOUT_MS)
+            val raw = drainResponse(activePort)
+
+            val negative = Obd2Frame.isNegativeResponse(raw, mode)
+            val data = if (negative) null else Obd2Frame.extractRaw(raw, mode, pid)
+            Timber.tag(TAG).i(
+                "probe %02X%02X -> %s%s".format(
+                    mode, pid, Obd2Frame.toHex(raw), if (negative) " (negative)" else ""
+                )
+            )
+            ProbeResult(
+                requestHex = Obd2Frame.toHex(frame),
+                rawHex = Obd2Frame.toHex(raw),
+                dataHex = data?.let { Obd2Frame.toHex(it) },
+                negative = negative
+            )
+        } catch (e: Exception) {
+            Timber.tag(TAG).e(e, "Probe %02X%02X failed".format(mode, pid))
+            null
+        }
+    }
+
+    /** Which init the ECU actually answered — the first thing to know when a dump is odd. */
+    fun negotiatedFormat(): Obd2Frame.Format? = format
+
     /** Reads Mode $01 PID $01 and decodes it. Null if the read failed. */
     fun readReadiness(): ObdReadiness.Report? {
         val data = request(ObdReadiness.MODE, ObdReadiness.PID, ObdReadiness.DATA_LENGTH)

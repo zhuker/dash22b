@@ -151,6 +151,11 @@ fun MessagesContent() {
             text.equals("check", ignoreCase = true) -> {
                 dtcRepository.requestDtcRead()
             }
+            text.equals("debug", ignoreCase = true) ||
+            text.equals("dump", ignoreCase = true) ||
+            text.equals("obd dump", ignoreCase = true) -> {
+                dtcRepository.requestDiagnosticDump()
+            }
             text.equals("check readiness", ignoreCase = true) ||
             text.equals("readiness", ignoreCase = true) ||
             text.equals("im readiness", ignoreCase = true) ||
@@ -421,6 +426,9 @@ private fun buildHelpMessage(): String = """
       upload them (also "send logs", "upload logs")
     clear logs -- delete every log on disk (also "delete logs")
 
+    debug -- run a raw generic OBD-II capture (Mode 01/06/09) and save it for
+      analysis off the car; pair it with "share logs" (also "dump")
+
     help -- this list
 """.trimIndent()
 
@@ -437,7 +445,8 @@ private fun describeLogs(logs: List<LogArchiver.LogFile>): String {
         append("${logs.size} ${fileWord(logs.size)} on disk (${LogArchiver.formatBytes(total)}):")
         listOf(
             "Monitor CSVs" to LogArchiver.Kind.MONITOR_CSV,
-            "Debug logs" to LogArchiver.Kind.DEBUG_LOG
+            "Debug logs" to LogArchiver.Kind.DEBUG_LOG,
+            "OBD dumps" to LogArchiver.Kind.OBD_DUMP
         ).forEach { (heading, kind) ->
             val group = logs.filter { it.kind == kind }
             if (group.isEmpty()) return@forEach

@@ -91,6 +91,33 @@ object Obd2Frame {
         return null
     }
 
+    /**
+     * Like [extractData] but takes **everything** after the mode/PID echo instead of a
+     * fixed slice.
+     *
+     * This is the discovery path. Mode $06 record layout on a pre-CAN ECU is
+     * manufacturer-defined and not published by Subaru, so there is no length to ask for;
+     * demanding one would return null for every TID and read as "not supported" when the
+     * truth is "we do not know how long the answer is yet". The trailing checksum byte is
+     * left in deliberately — until the record layout is known, dropping a byte on the
+     * assumption it is a checksum could be dropping data.
+     *
+     * @return every byte following the `mode+0x40, pid` pair, or null if that pair is absent.
+     */
+    fun extractRaw(raw: ByteArray, mode: Int, pid: Int): ByteArray? {
+        val responseMode = positiveResponseMode(mode)
+        var i = 0
+        while (i + 1 < raw.size) {
+            if ((raw[i].toInt() and 0xFF) == responseMode &&
+                (raw[i + 1].toInt() and 0xFF) == pid
+            ) {
+                return raw.copyOfRange(i + 2, raw.size)
+            }
+            i++
+        }
+        return null
+    }
+
     /** True if [raw] contains a negative-response frame (0x7F) for [mode]. */
     fun isNegativeResponse(raw: ByteArray, mode: Int): Boolean {
         for (i in 0 until raw.size - 1) {

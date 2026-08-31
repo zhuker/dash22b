@@ -133,6 +133,10 @@ class SsmDataSource(private val context: Context,
     private val pendingReadinessRequest =
         AtomicReference<CompletableDeferred<ObdReadiness.Report?>?>(null)
 
+    // Pending raw diagnostic capture (serialized with polling loop).
+    private val pendingDumpRequest =
+        AtomicReference<CompletableDeferred<DiagnosticDump.Dump?>?>(null)
+
     /**
      * Subscribe to specific parameters by name.
      * Only subscribed parameters will be polled from the ECU.
@@ -189,6 +193,44 @@ class SsmDataSource(private val context: Context,
         val deferred = CompletableDeferred<ObdReadiness.Report?>()
         pendingReadinessRequest.set(deferred)
         return deferred
+    }
+
+    /**
+     * Request a raw OBD-II diagnostic capture from the polling loop.
+     *
+     * Same protocol takeover as [requestReadiness] but longer — roughly a dozen probes at
+     * ~150 ms each on top of the init — so the gauges stall for a few seconds.
+     */
+    fun requestDiagnosticDump(): CompletableDeferred<DiagnosticDump.Dump?> {
+        val deferred = CompletableDeferred<DiagnosticDump.Dump?>()
+        pendingDumpRequest.set(deferred)
+        return deferred
+    }
+
+    /**
+     * Swaps the cable to generic OBD-II, runs the probe list, writes the capture, and
+     * swaps back. Must be called from the polling loop.
+     */
+    private fun runDiagnosticDump(): DiagnosticDump.Dump? {
+        val obd = Obd2SerialManager(context)
+        try {
+            serialManager.disconnect()
+            Thread.sleep(OBD_PROTOCOL_SWAP_DELAY_MS)
+
+            if (!obd.connect()) {
+                Timber.tag(TAG).w("Could not establish a generic OBD-II session for the dump")
+                return null
+            }
+            val dump = DiagnosticDump.capture(obd)
+            DiagnosticDump.write(context.getExternalFilesDir(null) ?: context.filesDir, dump)
+            return dump
+        } finally {
+            obd.disconnect()
+            Thread.sleep(OBD_PROTOCOL_SWAP_DELAY_MS)
+            if (serialManager.connect()) {
+                serialManager.sendInit(1)
+            }
+        }
     }
 
     /**
@@ -391,6 +433,21 @@ class SsmDataSource(private val context: Context,
                             if (e is CancellationException) throw e
                             Timber.tag(TAG).e(e, "Readiness read failed")
                             readinessDeferred.complete(null)
+                        }
+                    }
+
+                    // Check for pending diagnostic dump. Like readiness, this takes the
+                    // K-line away from SSM for its duration.
+                    val dumpDeferred = pendingDumpRequest.getAndSet(null)
+                    if (dumpDeferred != null) {
+                        Timber.tag(TAG).i("Servicing diagnostic dump request")
+                        try {
+                            val dump = runDiagnosticDump()
+                            dumpDeferred.complete(dump)
+                        } catch (e: Exception) {
+                            if (e is CancellationException) throw e
+                            Timber.tag(TAG).e(e, "Diagnostic dump failed")
+                            dumpDeferred.complete(null)
                         }
                     }
 
