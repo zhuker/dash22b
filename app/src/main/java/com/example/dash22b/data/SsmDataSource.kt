@@ -1,6 +1,8 @@
 package com.example.dash22b.data
 
 import android.content.Context
+import com.example.dash22b.obd.Obd2SerialManager
+import com.example.dash22b.obd.ObdReadiness
 import com.example.dash22b.obd.SsmDtcCode
 import com.example.dash22b.obd.SsmEcuInit
 import com.example.dash22b.obd.SsmExpressionEvaluator
@@ -33,6 +35,11 @@ class SsmDataSource(private val context: Context,
     companion object {
         const val TAG = "SsmDataSource"
         private const val POLL_DELAY_MS = 50L  // Target ~20Hz
+
+        // Settling time when handing the K-line between the SSM and generic OBD-II
+        // stacks. The two run at different baud rates on the same pin, so the wire needs
+        // to go quiet before the other side starts clocking bits onto it.
+        private const val OBD_PROTOCOL_SWAP_DELAY_MS = 200L
         private const val MAX_RETRY_DELAY_MS = 10_000L
         private const val HISTORY_SIZE = 50
 
@@ -121,6 +128,11 @@ class SsmDataSource(private val context: Context,
     // Pending ECU reset request (serialized with polling loop)
     private val pendingResetRequest = AtomicReference<CompletableDeferred<Boolean>?>(null)
 
+    // Pending readiness read (serialized with polling loop). Held as a nullable Report so
+    // the caller can distinguish "read failed" (null) from any decoded result.
+    private val pendingReadinessRequest =
+        AtomicReference<CompletableDeferred<ObdReadiness.Report?>?>(null)
+
     /**
      * Subscribe to specific parameters by name.
      * Only subscribed parameters will be polled from the ECU.
@@ -163,6 +175,51 @@ class SsmDataSource(private val context: Context,
         val deferred = CompletableDeferred<Boolean>()
         pendingResetRequest.set(deferred)
         return deferred
+    }
+
+    /**
+     * Request an emissions readiness read from the polling loop.
+     *
+     * This is the one request that changes protocol: readiness is not in SSM's address
+     * space on this ECU, so the loop hands the cable to [Obd2SerialManager] at 10400 baud
+     * and takes it back when done. Gauges stall for the duration (a second or two on fast
+     * init, a few more if it has to fall back to the 5-baud slow init).
+     */
+    fun requestReadiness(): CompletableDeferred<ObdReadiness.Report?> {
+        val deferred = CompletableDeferred<ObdReadiness.Report?>()
+        pendingReadinessRequest.set(deferred)
+        return deferred
+    }
+
+    /**
+     * Swaps the cable to generic OBD-II, reads readiness, and swaps back.
+     *
+     * Must be called from the polling loop — serial access is not thread-safe, and for the
+     * duration of this call the SSM session does not exist. SSM is torn down first because
+     * the two protocols cannot share the wire: different baud rate, different framing.
+     * The finally block restores SSM whatever happens, so a failed readiness read costs a
+     * reconnect rather than the gauges for the rest of the drive.
+     */
+    private fun readReadiness(): ObdReadiness.Report? {
+        val obd = Obd2SerialManager(context)
+        try {
+            serialManager.disconnect()
+            Thread.sleep(OBD_PROTOCOL_SWAP_DELAY_MS)
+
+            if (!obd.connect()) {
+                Timber.tag(TAG).w("Could not establish a generic OBD-II session")
+                return null
+            }
+            return obd.readReadiness()
+        } finally {
+            obd.disconnect()
+            Thread.sleep(OBD_PROTOCOL_SWAP_DELAY_MS)
+            // Put SSM back. The polling loop's own reconnect logic handles it from here if
+            // this first attempt does not take.
+            if (serialManager.connect()) {
+                serialManager.sendInit(1)
+            }
+        }
     }
 
     /**
@@ -318,6 +375,22 @@ class SsmDataSource(private val context: Context,
                             if (e is CancellationException) throw e
                             Timber.tag(TAG).e(e, "ECU reset failed")
                             resetDeferred.complete(false)
+                        }
+                    }
+
+                    // Check for pending readiness request. Serviced last of the three
+                    // because it is the only one that tears down the SSM session.
+                    val readinessDeferred = pendingReadinessRequest.getAndSet(null)
+                    if (readinessDeferred != null) {
+                        Timber.tag(TAG).i("Servicing readiness request (switching to generic OBD-II)")
+                        try {
+                            val report = readReadiness()
+                            readinessDeferred.complete(report)
+                            Timber.tag(TAG).i("Readiness read ${if (report != null) "complete" else "failed"}")
+                        } catch (e: Exception) {
+                            if (e is CancellationException) throw e
+                            Timber.tag(TAG).e(e, "Readiness read failed")
+                            readinessDeferred.complete(null)
                         }
                     }
 

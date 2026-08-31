@@ -18,6 +18,14 @@ data class ChatMessage(
 sealed class ServiceRequest {
     object ReadDtc : ServiceRequest()
     object ClearCodes : ServiceRequest()
+
+    /**
+     * Read the emissions readiness monitors. Unlike the other two this leaves SSM
+     * entirely: readiness lives in generic OBD-II Mode $01 PID $01, so servicing it means
+     * dropping the SSM session, re-initialising the cable at 10400 baud, and putting SSM
+     * back afterwards.
+     */
+    object CheckReadiness : ServiceRequest()
 }
 
 class DtcRepository {
@@ -50,6 +58,11 @@ class DtcRepository {
     fun requestClearCodes() {
         _isLoading.value = true
         Timber.i("DtcRepository: requestClearCodes called, trySend result=${_serviceRequests.trySend(ServiceRequest.ClearCodes)}")
+    }
+
+    fun requestReadiness() {
+        _isLoading.value = true
+        Timber.i("DtcRepository: requestReadiness called, trySend result=${_serviceRequests.trySend(ServiceRequest.CheckReadiness)}")
     }
 
     fun setLoading(loading: Boolean) {

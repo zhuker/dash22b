@@ -151,6 +151,12 @@ fun MessagesContent() {
             text.equals("check", ignoreCase = true) -> {
                 dtcRepository.requestDtcRead()
             }
+            text.equals("check readiness", ignoreCase = true) ||
+            text.equals("readiness", ignoreCase = true) ||
+            text.equals("im readiness", ignoreCase = true) ||
+            text.equals("smog", ignoreCase = true) -> {
+                dtcRepository.requestReadiness()
+            }
             text.equals("share logs", ignoreCase = true) ||
             text.equals("send logs", ignoreCase = true) ||
             text.equals("upload logs", ignoreCase = true) -> {
@@ -408,6 +414,8 @@ private fun buildHelpMessage(): String = """
 
     read codes -- scan the ECU for trouble codes (also "scan", "check")
     clear codes -- clear stored trouble codes
+    check readiness -- read the emissions readiness monitors over generic OBD-II
+      and say whether it would clear a CA smog check (also "readiness", "smog")
 
     share logs -- zip the monitor CSVs and debug logs, then open the share sheet to
       upload them (also "send logs", "upload logs")

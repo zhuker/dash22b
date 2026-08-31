@@ -16,6 +16,7 @@ import com.example.dash22b.MainActivity
 import com.example.dash22b.R
 import com.example.dash22b.data.DtcRepository
 import com.example.dash22b.data.ServiceRequest
+import com.example.dash22b.data.ReadinessMessage
 import com.example.dash22b.data.ParameterRegistry
 import com.example.dash22b.data.MonitorCsvWriter
 import com.example.dash22b.data.SsmDataSource
@@ -166,6 +167,26 @@ class DashService : Service() {
                         } catch (e: Exception) {
                             Timber.e(e, "DTC read failed")
                             dtcRepository.addCarMessage("Error reading codes: ${e.message}")
+                        }
+                        dtcRepository.setLoading(false)
+                    }
+                    is ServiceRequest.CheckReadiness -> {
+                        Timber.i("Readiness check requested from UI")
+                        try {
+                            val report = ssmDataSource.requestReadiness().await()
+                            if (report == null) {
+                                dtcRepository.addCarMessage(
+                                    "Could not read the readiness monitors. This needs a generic " +
+                                        "OBD-II session on the same cable, and the ECU did not answer " +
+                                        "either init. Check the cable is seated and the key is on."
+                                )
+                            } else {
+                                dtcRepository.updateMilStatus(report.milOn)
+                                dtcRepository.addCarMessage(ReadinessMessage.format(report))
+                            }
+                        } catch (e: Exception) {
+                            Timber.e(e, "Readiness check failed")
+                            dtcRepository.addCarMessage("Error reading readiness monitors: ${e.message}")
                         }
                         dtcRepository.setLoading(false)
                     }
