@@ -39,7 +39,11 @@ class SsmDataSource(private val context: Context,
         // Settling time when handing the K-line between the SSM and generic OBD-II
         // stacks. The two run at different baud rates on the same pin, so the wire needs
         // to go quiet before the other side starts clocking bits onto it.
-        private const val OBD_PROTOCOL_SWAP_DELAY_MS = 200L
+        private const val OBD_PROTOCOL_SWAP_DELAY_MS = 500L
+
+        // How many times to re-establish SSM after an OBD-II session before giving up and
+        // letting the polling loop's reconnect logic take over.
+        private const val SSM_RESTORE_ATTEMPTS = 3
         private const val MAX_RETRY_DELAY_MS = 10_000L
         private const val HISTORY_SIZE = 50
 
@@ -226,11 +230,31 @@ class SsmDataSource(private val context: Context,
             return dump
         } finally {
             obd.disconnect()
-            Thread.sleep(OBD_PROTOCOL_SWAP_DELAY_MS)
-            if (serialManager.connect()) {
-                serialManager.sendInit(1)
-            }
+            restoreSsm()
         }
+    }
+
+    /**
+     * Brings SSM back after a generic OBD-II session.
+     *
+     * Retries, because a single attempt is not enough in practice: the ECU needs the bus
+     * quiet and the diagnostic session actually ended before it will answer SSM again, and
+     * on 2026-08-30 one failed attempt left the gauges dead for the rest of the drive with
+     * every read returning nothing but its own echo. An init that returns null here is a
+     * real failure, not a slow start -- so it is retried rather than left to the polling
+     * loop's own error counter, which needs three failed reads per attempt to notice.
+     */
+    private fun restoreSsm() {
+        repeat(SSM_RESTORE_ATTEMPTS) { attempt ->
+            Thread.sleep(OBD_PROTOCOL_SWAP_DELAY_MS)
+            if (serialManager.connect() && serialManager.sendInit(1) != null) {
+                Timber.tag(TAG).i("SSM restored after OBD-II session (attempt ${attempt + 1})")
+                return
+            }
+            Timber.tag(TAG).w("SSM restore attempt ${attempt + 1} failed")
+            serialManager.disconnect()
+        }
+        Timber.tag(TAG).e("Could not restore SSM after the OBD-II session")
     }
 
     /**
@@ -255,12 +279,7 @@ class SsmDataSource(private val context: Context,
             return obd.readReadiness()
         } finally {
             obd.disconnect()
-            Thread.sleep(OBD_PROTOCOL_SWAP_DELAY_MS)
-            // Put SSM back. The polling loop's own reconnect logic handles it from here if
-            // this first attempt does not take.
-            if (serialManager.connect()) {
-                serialManager.sendInit(1)
-            }
+            restoreSsm()
         }
     }
 

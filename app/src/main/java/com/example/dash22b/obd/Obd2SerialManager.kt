@@ -317,8 +317,45 @@ class Obd2SerialManager(private val context: Context) {
         return collected.toByteArray()
     }
 
-    /** Closes the port so SSM can reclaim the wire. Safe to call when not connected. */
+    /**
+     * Ends the KWP2000 session with StopCommunication (service 0x82).
+     *
+     * **This is not optional.** A KWP2000 ECU that was never told the session ended stays
+     * in it: it ignores SSM entirely, and it ignores a fresh StartCommunication too, so
+     * both the gauges and any later OBD-II request are dead until the key is cycled.
+     * Observed on the car 2026-08-30 -- readiness read fine, then SSM returned nothing but
+     * its own echo for the following two minutes and the next dump could not init.
+     *
+     * ISO 9141-2 has no equivalent request; that session ends by bus timeout, so this is a
+     * no-op for it.
+     */
+    private fun stopCommunication() {
+        val activePort = port ?: return
+        if (format != Obd2Frame.Format.KWP2000) return
+
+        try {
+            Thread.sleep(INTER_REQUEST_DELAY_MS)
+            // C1 33 F1 82 + checksum -- same shape as StartCommunication, service 0x82.
+            val request = byteArrayOf(0xC1.toByte(), 0x33, 0xF1.toByte(), 0x82.toByte())
+            val frame = request + Obd2Frame.checksum(request).toByte()
+            activePort.write(frame, WRITE_TIMEOUT_MS)
+            val response = drainResponse(activePort)
+            Timber.tag(TAG).i("StopCommunication response: ${Obd2Frame.toHex(response)}")
+        } catch (e: Exception) {
+            // Best effort: if this fails the ECU is left in-session, which the caller's
+            // settle delay and SSM retries then have to survive.
+            Timber.tag(TAG).w(e, "StopCommunication failed; ECU may still hold the session")
+        }
+    }
+
+    /**
+     * Ends the session and closes the port so SSM can reclaim the wire.
+     *
+     * Always ends the session first -- see [stopCommunication] for why simply closing the
+     * port is not enough.
+     */
     fun disconnect() {
+        stopCommunication()
         port?.let { closeQuietly(it) }
         port = null
         format = null

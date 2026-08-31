@@ -91,6 +91,59 @@ class Obd2FrameTest {
     }
 
     @Test
+    fun `StartCommunication and StopCommunication frames match the wire`() {
+        // Verified against the car 2026-08-30: the echo of our StartCommunication read
+        // back as "C1 33 F1 81 66", so this checksum is the one the ECU accepted.
+        val start = byteArrayOf(0xC1.toByte(), 0x33, 0xF1.toByte(), 0x81.toByte())
+        assertEquals(0x66, Obd2Frame.checksum(start))
+
+        // StopCommunication is the same shape with service 0x82. Not sending this is what
+        // left the ECU stuck in a KWP session with SSM dead behind it.
+        val stop = byteArrayOf(0xC1.toByte(), 0x33, 0xF1.toByte(), 0x82.toByte())
+        assertEquals(0x67, Obd2Frame.checksum(stop))
+    }
+
+    @Test
+    fun `extractRaw takes the whole payload when the length is unknown`() {
+        // A Mode 06 style response: 46 03 then records of unknown length.
+        val raw = bytes(0x83, 0xF1, 0x10, 0x46, 0x03, 0x01, 0x00, 0x20, 0x00, 0x10, 0x00, 0x40, 0x99)
+
+        val data = Obd2Frame.extractRaw(raw, 0x06, 0x03)
+
+        assertArrayEquals(bytes(0x01, 0x00, 0x20, 0x00, 0x10, 0x00, 0x40, 0x99), data)
+    }
+
+    @Test
+    fun `extractRaw strips the echo but keeps everything after the response header`() {
+        val request = Obd2Frame.buildRequest(0x06, 0x03, Obd2Frame.Format.KWP2000)
+        val raw = request + bytes(0x83, 0xF1, 0x10, 0x46, 0x03, 0xAA, 0xBB)
+
+        assertArrayEquals(bytes(0xAA, 0xBB), Obd2Frame.extractRaw(raw, 0x06, 0x03))
+    }
+
+    @Test
+    fun `extractRaw returns null when the ECU never answered`() {
+        assertNull(Obd2Frame.extractRaw(bytes(0xC2, 0x33, 0xF1, 0x06, 0x03, 0xEF), 0x06, 0x03))
+    }
+
+    @Test
+    fun `real readiness exchange from the car decodes end to end`() {
+        // Captured 2026-08-30 20:16:09 -- echo then the ECU's response.
+        val raw = bytes(
+            0xC2, 0x33, 0xF1, 0x01, 0x01, 0xE8,
+            0x86, 0xF1, 0x10, 0x41, 0x01, 0x00, 0x07, 0x65, 0x00, 0x35
+        )
+
+        val data = Obd2Frame.extractData(raw, 0x01, 0x01, 4)
+
+        assertArrayEquals(bytes(0x00, 0x07, 0x65, 0x00), data)
+        val report = ObdReadiness.decode(data!!)
+        assertTrue(report.passesCaliforniaReadiness)
+        assertEquals(0, report.incomplete.size)
+        assertEquals(4, report.unsupported.size)
+    }
+
+    @Test
     fun `positive response mode is request plus 0x40`() {
         assertEquals(0x41, Obd2Frame.positiveResponseMode(0x01))
         assertEquals(0x49, Obd2Frame.positiveResponseMode(0x09))
