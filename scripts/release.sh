@@ -132,10 +132,18 @@ git push origin "$BRANCH"
 git push origin "$TAG"
 
 echo "==> creating GitHub release"
+# Tag naming carries the release's status: vMAJOR.MINOR.PATCH off main is a real
+# release, vMAJOR.MINOR.PATCH-<branch> is a branch prerelease. Marking every release
+# a prerelease would make "latest" on GitHub point at nothing users should install.
+PRERELEASE_FLAG=()
+if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-.+$ ]]; then
+    PRERELEASE_FLAG=(--prerelease)
+fi
+
 gh release create "$TAG" "$APK" \
     --title "$TAG" \
     --notes-file "$NOTES" \
-    --prerelease \
+    "${PRERELEASE_FLAG[@]}" \
     --target "$(git rev-parse HEAD)"
 
 echo
