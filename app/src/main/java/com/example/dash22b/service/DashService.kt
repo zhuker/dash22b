@@ -69,6 +69,9 @@ class DashService : Service() {
     @Volatile
     private var gpsColumnEnabled = false
 
+    // Location collection, started as soon as the permission is held. Null until then.
+    private var gpsJob: Job? = null
+
     // Current BLE scan cycle job — cancelled to force immediate rescan
     private var tpmsScanCycleJob: Job? = null
 
@@ -123,7 +126,7 @@ class DashService : Service() {
         startTpmsScanning()
         startTpmsStaleChecker()
         startSsmPolling()
-        startGpsLogging()
+        ensureGpsLogging()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -143,6 +146,9 @@ class DashService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        // The activity restarts the service every time it resumes, which is the chance to
+        // pick up a location permission granted after the service was created.
+        ensureGpsLogging()
         return super.onStartCommand(intent, flags, startId)
     }
 
@@ -284,12 +290,17 @@ class DashService : Service() {
      * cable is connected and the ECU answers, so tying the track to it would lose exactly
      * the drives where the adapter was unplugged or the engine was off.
      */
-    private fun startGpsLogging() {
+    private fun ensureGpsLogging() {
+        if (gpsJob != null) return
         if (!locationSource.hasPermission()) {
             Timber.w("Location permission not granted; no GPS track will be recorded")
             return
         }
-        serviceScope.launch {
+        // The service may have been created before the permission dialog was answered, in
+        // which case it started without the location foreground type. Re-declaring it now
+        // is what keeps fixes arriving once the app is in the background.
+        startForegroundService()
+        gpsJob = serviceScope.launch {
             locationSource.fixes().collect { fix ->
                 gpsCsvWriter.record(fix)
             }

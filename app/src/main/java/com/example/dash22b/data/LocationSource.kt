@@ -9,6 +9,7 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Bundle
+import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
@@ -126,7 +127,10 @@ class LocationSource(private val context: Context) {
                 listener,
                 Looper.getMainLooper()
             )
-            manager.registerGnssStatusCallback(statusCallback, null)
+            // An explicit Handler, not null: null means "this thread's Looper", and this
+            // runs on a Dispatchers.IO worker, which has none. That is a crash at
+            // registration, and no JVM test can see it.
+            manager.registerGnssStatusCallback(statusCallback, Handler(Looper.getMainLooper()))
             Timber.i("GPS updates requested at the receiver's own rate")
         } catch (e: SecurityException) {
             // Permission can be revoked between the check above and this call.
