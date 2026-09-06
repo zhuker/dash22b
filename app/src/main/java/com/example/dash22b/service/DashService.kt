@@ -22,6 +22,7 @@ import com.example.dash22b.data.ParameterRegistry
 import com.example.dash22b.data.EngineData
 import com.example.dash22b.data.GpsCsvWriter
 import com.example.dash22b.data.GpsParameters
+import com.example.dash22b.data.GpsRepository
 import com.example.dash22b.data.LocationSource
 import com.example.dash22b.data.MonitorCsvWriter
 import com.example.dash22b.data.ValueWithUnit
@@ -55,6 +56,7 @@ class DashService : Service() {
     // GPS
     private lateinit var locationSource: LocationSource
     private lateinit var gpsCsvWriter: GpsCsvWriter
+    private lateinit var gpsRepository: GpsRepository
 
     // SSM ECU
     private lateinit var ssmDataSource: SsmDataSource
@@ -115,6 +117,7 @@ class DashService : Service() {
 
         // SSM setup
         ssmRepository = appContainer.ssmRepository
+        gpsRepository = appContainer.gpsRepository
         historyStore = appContainer.historyStore
         parameterRegistry = appContainer.parameterRegistry
         ssmDataSource = SsmDataSource(this, parameterRegistry)
@@ -303,6 +306,7 @@ class DashService : Service() {
         gpsJob = serviceScope.launch {
             locationSource.fixes().collect { fix ->
                 gpsCsvWriter.record(fix)
+                gpsRepository.record(fix)
             }
         }
     }
@@ -520,6 +524,10 @@ class DashService : Service() {
         }
         if (::gpsCsvWriter.isInitialized) {
             gpsCsvWriter.close()
+        }
+        if (::gpsRepository.isInitialized) {
+            // The odometer is only written every hundred metres; this keeps the last part.
+            gpsRepository.persist()
         }
         serviceScope.cancel()
         super.onDestroy()

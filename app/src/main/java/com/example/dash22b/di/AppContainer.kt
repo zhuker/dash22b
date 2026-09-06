@@ -4,6 +4,8 @@ import android.content.Context
 import com.example.dash22b.data.AndroidAssetLoader
 import com.example.dash22b.data.AssetLoader
 import com.example.dash22b.data.GpsParameters
+import com.example.dash22b.data.GpsRepository
+import com.example.dash22b.data.PrefsOdometerStore
 import com.example.dash22b.data.ParameterRegistry
 import com.example.dash22b.data.PresetManager
 import com.example.dash22b.data.PresetRepository
@@ -60,6 +62,12 @@ class AppContainer(context: Context) {
 
     val ssmRepository: SsmRepository by lazy {
         SsmRepository()
+    }
+
+    // Lives here rather than in DashService so the trip counter survives a service restart,
+    // and so the status bar can read it whether or not the service is up.
+    val gpsRepository: GpsRepository by lazy {
+        GpsRepository(PrefsOdometerStore(context))
     }
 
     // Lives here rather than in DashService so graph history survives a service

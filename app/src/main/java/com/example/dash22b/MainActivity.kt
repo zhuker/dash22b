@@ -21,6 +21,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import androidx.compose.runtime.CompositionLocalProvider
 import com.example.dash22b.di.LocalDtcRepository
+import com.example.dash22b.di.LocalGpsRepository
 import com.example.dash22b.di.LocalHistoryStore
 import com.example.dash22b.di.LocalParameterRegistry
 import com.example.dash22b.di.LocalPresetManager
@@ -83,6 +84,7 @@ class MainActivity : ComponentActivity() {
                 LocalPresetManager provides container.presetManager,
                 LocalSsmRepository provides container.ssmRepository,
                 LocalHistoryStore provides container.historyStore,
+                LocalGpsRepository provides container.gpsRepository,
                 LocalDtcRepository provides container.dtcRepository
             ) {
                 Dash22bTheme {
