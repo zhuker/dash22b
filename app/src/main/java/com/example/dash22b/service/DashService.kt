@@ -19,7 +19,13 @@ import com.example.dash22b.data.ServiceRequest
 import com.example.dash22b.data.DiagnosticDump
 import com.example.dash22b.data.ReadinessMessage
 import com.example.dash22b.data.ParameterRegistry
+import com.example.dash22b.data.EngineData
+import com.example.dash22b.data.GpsCsvWriter
+import com.example.dash22b.data.GpsParameters
+import com.example.dash22b.data.LocationSource
 import com.example.dash22b.data.MonitorCsvWriter
+import com.example.dash22b.data.ValueWithUnit
+import com.example.dash22b.data.DisplayUnit
 import com.example.dash22b.data.SsmDataSource
 import com.example.dash22b.data.SsmRepository
 import com.example.dash22b.data.TpmsDataSource
@@ -46,6 +52,10 @@ class DashService : Service() {
     private lateinit var tpmsDataSource: TpmsDataSource
     private lateinit var tpmsRepository: TpmsRepository
 
+    // GPS
+    private lateinit var locationSource: LocationSource
+    private lateinit var gpsCsvWriter: GpsCsvWriter
+
     // SSM ECU
     private lateinit var ssmDataSource: SsmDataSource
     private lateinit var monitorCsvWriter: MonitorCsvWriter
@@ -54,6 +64,10 @@ class DashService : Service() {
     private lateinit var parameterRegistry: ParameterRegistry
     private lateinit var dtcRepository: DtcRepository
     private lateinit var appContainer: com.example.dash22b.di.AppContainer
+
+    // Latched on the first fix: see withGpsSpeed for why it never goes back off.
+    @Volatile
+    private var gpsColumnEnabled = false
 
     // Current BLE scan cycle job — cancelled to force immediate rescan
     private var tpmsScanCycleJob: Job? = null
@@ -82,6 +96,12 @@ class DashService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+
+        // Before startForegroundService(): from Android 14 a service may only declare the
+        // location foreground type if it actually holds the permission, so the notification
+        // has to know whether GPS is available.
+        locationSource = LocationSource(this)
+
         startForegroundService()
 
         appContainer = (application as DashApplication).appContainer
@@ -95,12 +115,15 @@ class DashService : Service() {
         historyStore = appContainer.historyStore
         parameterRegistry = appContainer.parameterRegistry
         ssmDataSource = SsmDataSource(this, parameterRegistry)
-        monitorCsvWriter = MonitorCsvWriter(getExternalFilesDir(null) ?: filesDir)
+        val logDirectory = getExternalFilesDir(null) ?: filesDir
+        monitorCsvWriter = MonitorCsvWriter(logDirectory)
+        gpsCsvWriter = GpsCsvWriter(logDirectory)
         dtcRepository = appContainer.dtcRepository
 
         startTpmsScanning()
         startTpmsStaleChecker()
         startSsmPolling()
+        startGpsLogging()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -136,9 +159,10 @@ class DashService : Service() {
         // Collect engine data and push to repository
         serviceScope.launch {
             ssmDataSource.getEngineData().collect { engineData ->
-                monitorCsvWriter.record(engineData)
-                historyStore.record(engineData)
-                ssmRepository.updateEngineData(engineData)
+                val withGps = withGpsSpeed(engineData)
+                monitorCsvWriter.record(withGps)
+                historyStore.record(withGps)
+                ssmRepository.updateEngineData(withGps)
             }
         }
 
@@ -249,6 +273,54 @@ class DashService : Service() {
                 }
             }
         }
+    }
+
+    // ==================== GPS ====================
+
+    /**
+     * Records every fix to its own CSV, independent of the ECU.
+     *
+     * Deliberately not driven by the SSM polling loop: that loop emits nothing until the
+     * cable is connected and the ECU answers, so tying the track to it would lose exactly
+     * the drives where the adapter was unplugged or the engine was off.
+     */
+    private fun startGpsLogging() {
+        if (!locationSource.hasPermission()) {
+            Timber.w("Location permission not granted; no GPS track will be recorded")
+            return
+        }
+        serviceScope.launch {
+            locationSource.fixes().collect { fix ->
+                gpsCsvWriter.record(fix)
+            }
+        }
+    }
+
+    /**
+     * Adds GPS speed to an ECU sample so it can be shown on a gauge and graphed.
+     *
+     * Only speed, never position: a value is a `Float`, which resolves latitude to about a
+     * metre. Position stays in the GPS CSV as a `Double`.
+     *
+     * The column is added from the first fix onward and then never removed, because the
+     * monitor CSV starts a new file whenever the column set changes -- dropping the column
+     * on a tunnel would shred one drive into many files. No fix writes NaN instead, which
+     * reads as a gap in the graph and as a missing value in pandas, rather than as a car
+     * that stopped.
+     */
+    private fun withGpsSpeed(data: EngineData): EngineData {
+        if (data.values.isEmpty()) return data
+        if (!gpsColumnEnabled) {
+            // A fix can only exist if the permission was granted, so this doubles as the
+            // permission check without a binder call on every sample.
+            if (locationSource.latest == null) return data
+            gpsColumnEnabled = true
+            Timber.i("First GPS fix; adding ${GpsParameters.SPEED} to the monitor columns")
+        }
+        val speed = locationSource.freshFix()?.speedKmh ?: Float.NaN
+        return data.copy(
+            values = data.values + (GpsParameters.SPEED to ValueWithUnit(speed, DisplayUnit.KMH))
+        )
     }
 
     // ==================== TPMS ====================
@@ -373,11 +445,18 @@ class DashService : Service() {
         val notification = buildNotification("Initializing...")
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE else 0
-            )
+            var types = 0
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+            }
+            // The location type is what keeps fixes coming while the app is backgrounded,
+            // and it is claimed only when the permission is actually held: Android 14
+            // rejects a declared type the service has no permission for, which would kill
+            // the whole service rather than just GPS.
+            if (locationSource.hasPermission()) {
+                types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            }
+            startForeground(NOTIFICATION_ID, notification, types)
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
@@ -427,6 +506,9 @@ class DashService : Service() {
     override fun onDestroy() {
         if (::monitorCsvWriter.isInitialized) {
             monitorCsvWriter.close()
+        }
+        if (::gpsCsvWriter.isInitialized) {
+            gpsCsvWriter.close()
         }
         serviceScope.cancel()
         super.onDestroy()

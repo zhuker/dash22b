@@ -165,6 +165,25 @@ class ParameterRegistry private constructor(
         return definitions[key]
     }
 
+    /**
+     * A copy of this registry with [extra] definitions added.
+     *
+     * The registry is otherwise built entirely from one ECU source -- a CSV, the logger XML,
+     * or the hardcoded list -- and is immutable once built. App-produced parameters such as
+     * GPS speed have no ECU source, so they are merged in here instead. Returning a new
+     * registry rather than mutating keeps every reader's view stable.
+     *
+     * An entry with a name the ECU already uses replaces it, so an ECU parameter can never
+     * be shadowed by accident: the collision is decided here rather than by map ordering.
+     */
+    fun withExtra(extra: List<ParameterDefinition>): ParameterRegistry {
+        if (extra.isEmpty()) return this
+        val merged = sortedMapOf<String, ParameterDefinition>()
+        merged.putAll(definitions)
+        extra.forEach { merged[it.accessportName.lowercase()] = it }
+        return ParameterRegistry(merged)
+    }
+
     fun getAllDefinitions(): List<ParameterDefinition> {
         return definitions.values.distinctBy { it.accessportName }.sortedBy { it.accessportName }
     }
