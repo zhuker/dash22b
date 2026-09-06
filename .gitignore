@@ -4,3 +4,8 @@ app/build
 .idea
 .DS_Store
 apks/
+
+# Local scratch, not part of the build
+example/
+logs/
+build_error.log
