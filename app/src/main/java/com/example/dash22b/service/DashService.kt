@@ -41,7 +41,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -77,6 +76,29 @@ class DashService : Service() {
     // Current BLE scan cycle job — cancelled to force immediate rescan
     private var tpmsScanCycleJob: Job? = null
 
+    // Backoff between scan attempts that die on startup. Held on the service rather than
+    // inside the scan loop so that a wake-up -- the app coming forward, Bluetooth coming
+    // back on -- can drop it back to the minimum instead of serving out a 60s wait.
+    @Volatile
+    private var tpmsRetryDelayMs = SCAN_RETRY_MIN_MS
+
+    // The backoff wait itself, cancelled by a wake-up to retry now.
+    private var tpmsRetryWaitJob: Job? = null
+
+    // Registered while the service lives; see onDestroy.
+    private var bluetoothStateReceiver: android.content.BroadcastReceiver? = null
+
+    /**
+     * Retry the BLE scan now: drop the backoff and end whatever the scan loop is waiting on,
+     * whether that is a running scan cycle or a wait between failed attempts.
+     */
+    private fun wakeTpmsScan(reason: String) {
+        Timber.d("$reason — triggering immediate TPMS rescan")
+        tpmsRetryDelayMs = SCAN_RETRY_MIN_MS
+        tpmsRetryWaitJob?.cancel()
+        tpmsScanCycleJob?.cancel()
+    }
+
     // Local mutable state for TPMS
     private val currentTpmsMap = mutableMapOf<String, TpmsState>(
         "FL" to TpmsState(),
@@ -90,6 +112,20 @@ class DashService : Service() {
         const val NOTIFICATION_ID = 1
         const val STALE_TIMEOUT_MS = 120_000L
         const val RESCAN_DELAY_MS = 120_000L
+
+        /** A cycle shorter than RESCAN_DELAY_MS by more than this ended early, not on time. */
+        const val CYCLE_SLACK_MS = 5_000L
+
+        /** Backoff bounds for a scan that fails to start at all. */
+        const val SCAN_RETRY_MIN_MS = 5_000L
+        const val SCAN_RETRY_MAX_MS = 60_000L
+
+        /** How often a paused scan, or the driving watcher, re-checks its waking conditions. */
+        const val PAUSE_POLL_MS = 5_000L
+
+        /** Above this GPS speed the car counts as moving, whatever app is on screen. */
+        const val DRIVING_SPEED_KMH = 3f
+
         const val ACTION_EXIT = "EXIT"
         const val ACTION_FORCE_EXIT = "com.example.dash22b.ACTION_FORCE_EXIT"
     }
@@ -340,6 +376,17 @@ class DashService : Service() {
 
     // ==================== TPMS ====================
 
+    /**
+     * True while the car is moving under GPS, which is the case that must keep scanning
+     * whatever is on screen.
+     *
+     * Screen focus is a poor proxy for "the driver needs tyre pressures": music, navigation or
+     * a call takes the dash off screen mid-drive, and the sensors then go stale on the slower
+     * background scan -- which used to stop the scan outright until the app came back.
+     */
+    private fun isDriving(): Boolean =
+        (locationSource.freshFix()?.speedKmh ?: 0f) > DRIVING_SPEED_KMH
+
     private fun startTpmsScanning() {
         val app = application as DashApplication
 
@@ -350,21 +397,30 @@ class DashService : Service() {
                         currentTpmsMap.values.all { it.isStale }
                 }
 
-                if (allStale && !app.isInForeground.value) {
-                    Timber.d("TPMS sensors stale, app in background — pausing BLE scan")
-                    app.isInForeground.first { it }
-                    Timber.d("App foregrounded — resuming BLE scan")
+                if (allStale && !app.isInForeground.value && !isDriving()) {
+                    Timber.d("TPMS sensors stale, app in background and parked — pausing BLE scan")
+                    // Either waking condition ends the pause; polling beats combining flows
+                    // here because driving state is read from the latest fix, not collected.
+                    while (isActive && !app.isInForeground.value && !isDriving()) {
+                        delay(PAUSE_POLL_MS)
+                    }
+                    Timber.d("Resuming BLE scan (foreground=${app.isInForeground.value}, driving=${isDriving()})")
                 }
 
-                val scanMode = if (app.isInForeground.value)
+                // Driving keeps the scan alive (see the pause above) but does not raise its
+                // rate: pressure changes over minutes, and LOW_LATENCY means scanning
+                // continuously, which competes hardest with Bluetooth audio for the radio.
+                val fullRate = app.isInForeground.value
+                val scanMode = if (fullRate)
                     android.bluetooth.le.ScanSettings.SCAN_MODE_LOW_LATENCY
                 else
                     android.bluetooth.le.ScanSettings.SCAN_MODE_BALANCED
 
-                Timber.d("Starting BLE scan (mode=${if (scanMode == android.bluetooth.le.ScanSettings.SCAN_MODE_LOW_LATENCY) "LOW_LATENCY" else "BALANCED"})")
+                Timber.d("Starting BLE scan (mode=${if (fullRate) "LOW_LATENCY" else "BALANCED"}, driving=${isDriving()})")
 
                 // Run one scan cycle — collected into tpmsScanCycleJob so foreground
                 // transitions can cancel it to force an immediate restart
+                val cycleStart = android.os.SystemClock.elapsedRealtime()
                 tpmsScanCycleJob = launch {
                     val scanJob = launch {
                         tpmsDataSource.getTpmsUpdates(scanMode)
@@ -377,11 +433,33 @@ class DashService : Service() {
                             }
                     }
                     // Restart scan every 2 minutes to avoid Android BLE throttling
-                    delay(RESCAN_DELAY_MS)
-                    scanJob.cancel()
+                    val cycleEnd = launch {
+                        delay(RESCAN_DELAY_MS)
+                        scanJob.cancel()
+                    }
+                    // Waiting on the scan rather than the timer: a scan that dies early (no
+                    // adapter, onScanFailed) completes here, and the cycle ends with it
+                    // instead of holding a dead scanner for the rest of the two minutes.
+                    scanJob.join()
+                    cycleEnd.cancel()
                 }
                 tpmsScanCycleJob?.join()
-                Timber.d("BLE scan cycle ended")
+
+                val elapsed = android.os.SystemClock.elapsedRealtime() - cycleStart
+                if (elapsed < RESCAN_DELAY_MS - CYCLE_SLACK_MS) {
+                    val wait = tpmsRetryDelayMs
+                    Timber.d("BLE scan cycle ended early after ${elapsed}ms — retrying in ${wait}ms")
+                    // Grows while scans keep dying early, so a head unit sitting with
+                    // Bluetooth off does not spin.
+                    tpmsRetryDelayMs = (wait * 2).coerceAtMost(SCAN_RETRY_MAX_MS)
+                    // Held in a job of its own so a wake-up can cut the wait short; without
+                    // that, Bluetooth coming back on would still wait out a full minute.
+                    tpmsRetryWaitJob = launch { delay(wait) }
+                    tpmsRetryWaitJob?.join()
+                } else {
+                    Timber.d("BLE scan cycle ended")
+                    tpmsRetryDelayMs = SCAN_RETRY_MIN_MS
+                }
             }
         }
 
@@ -391,11 +469,34 @@ class DashService : Service() {
             var wasForeground = app.isInForeground.value
             app.isInForeground.collect { foreground ->
                 if (foreground && !wasForeground) {
-                    Timber.d("Foreground transition — triggering immediate TPMS rescan")
-                    tpmsScanCycleJob?.cancel()
+                    wakeTpmsScan("Foreground transition")
                 }
                 wasForeground = foreground
             }
+        }
+
+        // Nothing in the scan loop can tell an adapter that is off from one that is about to
+        // come back, so without this the first scan after Bluetooth is re-enabled waits out
+        // the backoff -- up to a minute of "Scanning..." with the app open.
+        bluetoothStateReceiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                val state = intent?.getIntExtra(
+                    android.bluetooth.BluetoothAdapter.EXTRA_STATE,
+                    android.bluetooth.BluetoothAdapter.ERROR
+                )
+                if (state == android.bluetooth.BluetoothAdapter.STATE_ON) {
+                    wakeTpmsScan("Bluetooth enabled")
+                }
+            }
+        }.also {
+            // Explicit export flag: required from Android 14 for context-registered
+            // receivers. A system broadcast is still delivered to a non-exported one.
+            androidx.core.content.ContextCompat.registerReceiver(
+                this,
+                it,
+                android.content.IntentFilter(android.bluetooth.BluetoothAdapter.ACTION_STATE_CHANGED),
+                androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
+            )
         }
     }
 
@@ -528,6 +629,14 @@ class DashService : Service() {
         if (::gpsRepository.isInitialized) {
             // The odometer is only written every hundred metres; this keeps the last part.
             gpsRepository.persist()
+        }
+        bluetoothStateReceiver?.let {
+            try {
+                unregisterReceiver(it)
+            } catch (e: IllegalArgumentException) {
+                // Never registered, e.g. onCreate failed before startTpmsScanning().
+            }
+            bluetoothStateReceiver = null
         }
         serviceScope.cancel()
         super.onDestroy()
