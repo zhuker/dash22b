@@ -11,17 +11,21 @@ import kotlinx.coroutines.flow.asStateFlow
  *
  * Storage is one FloatArray per parameter plus one shared LongArray of timestamps,
  * so a sample costs 8 + 4*paramCount bytes instead of the ~600 a Map-backed
- * EngineData row costs. Capacity is counted in samples: the poll loop runs at
- * roughly 10 Hz, so 12_000 samples is about twenty minutes and ~576 KB for ten
- * parameters.
+ * EngineData row costs. Capacity is counted in samples, so the time it covers
+ * depends on the poll rate, which with fast poll (SSM continuous read) depends on
+ * how many parameters the preset reads: ~22 Hz for 13, up to ~43 Hz for one 4-byte
+ * parameter, ~6 Hz in the single-read fallback. 36_000 samples is ~20 minutes at
+ * 30 Hz, ~27 at the usual 22 Hz, and ~1.7 MB for ten parameters.
  *
  * Values are stored in their SSM source unit. Display-unit conversion happens at
  * draw time, so changing a gauge's unit reconverts the whole retained series
  * instead of leaving a seam in the buffer.
  *
  * Single producer (the service polling loop), many readers (graph composables).
- * Both sides take the monitor; at 10 Hz writes and a handful of reads per frame
- * contention is immaterial and correctness is obvious.
+ * Both sides take the monitor. Every recorded sample bumps [version] and each
+ * visible graph re-queries, so at fast-poll rates a graph on the "All" window scans
+ * the whole ring ~20 times a second while holding the lock the recorder needs. Left
+ * unthrottled on purpose for now; see docs/ssm_fastpoll_plan.md.
  */
 class HistoryStore(val capacity: Int = DEFAULT_CAPACITY) {
 
@@ -173,7 +177,7 @@ class HistoryStore(val capacity: Int = DEFAULT_CAPACITY) {
     }
 
     companion object {
-        /** ~20 minutes at the ~10 Hz the poll loop actually achieves. */
-        const val DEFAULT_CAPACITY = 12_000
+        /** ~20 minutes at 30 Hz, ~27 at the ~22 Hz fast poll gives a 13-parameter preset. */
+        const val DEFAULT_CAPACITY = 36_000
     }
 }
