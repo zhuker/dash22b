@@ -22,7 +22,30 @@ val gitLastTag = git("describe", "--tags", "--abbrev=0")
 val gitSha = git("rev-parse", "--short", "HEAD").ifEmpty { "unknown" }
 val gitBranch = git("rev-parse", "--abbrev-ref", "HEAD").ifEmpty { "unknown" }
 val gitDate = git("log", "-1", "--format=%cd", "--date=short").ifEmpty { "unknown" }
-val gitCommitCount = git("rev-list", "--count", "HEAD").toIntOrNull() ?: 1
+// Commits since the last tag; everything since the root when there is no tag at all.
+val gitCommitsSinceTag =
+    (if (gitLastTag.isEmpty()) git("rev-list", "--count", "HEAD")
+     else git("rev-list", "--count", "$gitLastTag..HEAD")).toIntOrNull() ?: 0
+
+// versionCode is derived from the tag, not from the total commit count. Android refuses
+// to install a lower versionCode over a higher one, and the commit count is not
+// monotonic across branches: squash-merging a branch collapses its commits, so v0.6.0
+// on main (62 commits) came out lower than the branch build it replaced (64), and the
+// phone rejected the release as "package appears to be invalid".
+//
+//   major * 100_000_000 + minor * 1_000_000 + patch * 10_000 + commits since the tag
+//
+// v0.6.0 is 6_000_000; a dev build 7 commits past v0.5.0 is 5_000_007. Any release
+// outranks every build made before its tag, however the branches got merged. The
+// ceilings keep the fields from overlapping and stay under Android's 2_100_000_000.
+val versionCodeFromTag: Int = run {
+    val m = Regex("""^v(\d+)\.(\d+)\.(\d+)""").find(gitLastTag)
+    val (major, minor, patch) = m?.destructured?.toList()?.map { it.toInt() } ?: listOf(0, 0, 0)
+    check(major <= 20 && minor <= 99 && patch <= 99) {
+        "tag $gitLastTag does not fit the versionCode scheme (major <= 20, minor/patch <= 99)"
+    }
+    major * 100_000_000 + minor * 1_000_000 + patch * 10_000 + gitCommitsSinceTag.coerceAtMost(9_999)
+}
 
 // A build is a "release" only if HEAD sits exactly on a tag with no local edits.
 val isReleaseBuild = gitLastTag.isNotEmpty() && gitDescribe == gitLastTag
@@ -36,8 +59,7 @@ val whatsNewLine: String = run {
     if (isReleaseBuild && notes.exists()) {
         notes.readLines().firstOrNull { it.isNotBlank() }.orEmpty()
     } else {
-        val ahead = if (gitLastTag.isEmpty()) 0
-                    else git("rev-list", "--count", "$gitLastTag..HEAD").toIntOrNull() ?: 0
+        val ahead = if (gitLastTag.isEmpty()) 0 else gitCommitsSinceTag
         val subjects = git("log", "-2", "--format=%s")
             .lines().filter { it.isNotBlank() }.joinToString(" | ")
         val dirtyNote = if (gitDescribe.endsWith("-dirty")) " + uncommitted changes" else ""
@@ -55,7 +77,7 @@ android {
         applicationId = "com.example.dash22b"
         minSdk = 24
         targetSdk = 34
-        versionCode = gitCommitCount
+        versionCode = versionCodeFromTag
         versionName = gitDescribe.removePrefix("v")
 
         buildConfigField("String", "GIT_SHA", "\"${esc(gitSha)}\"")
