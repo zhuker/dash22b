@@ -26,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import android.os.SystemClock
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -45,6 +46,7 @@ import com.example.dash22b.data.PresetManager.Companion.GAUGE_DISABLED_PARAM
 import com.example.dash22b.data.PresetState
 import com.example.dash22b.data.UnitConverter
 import com.example.dash22b.di.LocalDtcRepository
+import com.example.dash22b.di.LocalGpsRepository
 import com.example.dash22b.di.LocalParameterRegistry
 import com.example.dash22b.di.LocalPresetManager
 import com.example.dash22b.di.LocalSsmRepository
@@ -897,8 +899,21 @@ fun GraphsContent(
     }
 }
 
+/**
+ * Odometer, trip, time and date.
+ *
+ * Odometer and trip come from GPS, so they work with no ECU connected. Both read "-- km"
+ * until there is something real to show: the previous build displayed the constants
+ * "000006 km" and "005.6 km", which look exactly like data and never were.
+ *
+ * The clock prefers satellite time, which is right even on a head unit whose own clock has
+ * never been set, and falls back to the timestamp of the last ECU sample when there is no
+ * recent fix -- no location permission, no receiver, or no sky.
+ */
 @Composable
 fun BottomStatusBar(engineData: EngineData, modifier: Modifier = Modifier) {
+    val gpsState by LocalGpsRepository.current.state.collectAsState()
+
     Row(
             modifier =
                     modifier.fillMaxWidth()
@@ -907,19 +922,21 @@ fun BottomStatusBar(engineData: EngineData, modifier: Modifier = Modifier) {
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically
     ) {
-        val dateObj = Date(engineData.timestamp)
+        val clockMillis = gpsState.clockMillis(SystemClock.elapsedRealtimeNanos())
+                ?: engineData.timestamp
+        val dateObj = Date(clockMillis)
         val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
         val dateFormat = SimpleDateFormat("dd.M.yyyy", Locale.getDefault())
 
         // Using smaller text styles and ensuring single line
         Text(
-                text = "000006 km",
+                text = formatOdometer(gpsState.odometerMeters),
                 color = Color.White,
                 style = MaterialTheme.typography.labelMedium,
                 maxLines = 1
         )
         Text(
-                text = "005.6 km",
+                text = formatTrip(gpsState.tripMeters, gpsState.latest != null),
                 color = Color.White,
                 style = MaterialTheme.typography.labelMedium,
                 maxLines = 1
@@ -938,3 +955,12 @@ fun BottomStatusBar(engineData: EngineData, modifier: Modifier = Modifier) {
         )
     }
 }
+
+/** Six digits of whole kilometres, the width the placeholder used. Blank until it turns. */
+internal fun formatOdometer(meters: Double): String =
+        if (meters <= 0.0) "------ km"
+        else String.format(Locale.US, "%06d km", (meters / 1000.0).toInt())
+
+/** Tenths of a kilometre for this session. Blank until the first fix arrives. */
+internal fun formatTrip(meters: Double, hasFix: Boolean): String =
+        if (!hasFix) "---.- km" else String.format(Locale.US, "%05.1f km", meters / 1000.0)

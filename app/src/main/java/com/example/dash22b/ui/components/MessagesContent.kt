@@ -452,6 +452,7 @@ private fun describeLogs(logs: List<LogArchiver.LogFile>): String {
         append("${logs.size} ${fileWord(logs.size)} on disk (${LogArchiver.formatBytes(total)}):")
         listOf(
             "Monitor CSVs" to LogArchiver.Kind.MONITOR_CSV,
+            "GPS tracks" to LogArchiver.Kind.GPS_CSV,
             "Debug logs" to LogArchiver.Kind.DEBUG_LOG,
             "OBD dumps" to LogArchiver.Kind.OBD_DUMP
         ).forEach { (heading, kind) ->

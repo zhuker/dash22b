@@ -164,8 +164,12 @@ class SsmDataSource(private val context: Context,
         return if (subscribed.isEmpty()) {
             emptyList()
         } else {
-            // Filter to only subscribed parameters
-            allParameters.filter { param -> subscribed.contains(param.name) }.map { it as SsmParameter }
+            // Filter to only subscribed parameters. filterIsInstance, not a cast: the
+            // registry also carries parameters this app produces itself, such as GPS speed,
+            // which have no ECU address and must never reach a read request.
+            allParameters
+                .filter { param -> subscribed.contains(param.name) }
+                .filterIsInstance<SsmParameter>()
         }
     }
 

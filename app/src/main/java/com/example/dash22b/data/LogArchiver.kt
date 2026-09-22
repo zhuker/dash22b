@@ -25,7 +25,7 @@ class LogArchiver(private val directory: File) {
         val bytes: Long get() = file.length()
     }
 
-    enum class Kind { MONITOR_CSV, DEBUG_LOG, OBD_DUMP }
+    enum class Kind { MONITOR_CSV, GPS_CSV, DEBUG_LOG, OBD_DUMP }
 
     /**
      * Every log currently on disk, newest first. The active debug log sorts in with the
@@ -38,6 +38,7 @@ class LogArchiver(private val directory: File) {
             .mapNotNull { file ->
                 val kind = when {
                     file.name.endsWith(".csv") && file.name.startsWith(MONITOR_CSV_PREFIX) -> Kind.MONITOR_CSV
+                    file.name.endsWith(".csv") && file.name.startsWith(GPS_CSV_PREFIX) -> Kind.GPS_CSV
                     file.name == ACTIVE_DEBUG_LOG -> Kind.DEBUG_LOG
                     file.name.startsWith(ROTATED_DEBUG_LOG_PREFIX) && file.name.endsWith(".txt") -> Kind.DEBUG_LOG
                     // Diagnostic captures ride out with the logs; they are the whole point
@@ -120,6 +121,9 @@ class LogArchiver(private val directory: File) {
 
         /** Prefix [MonitorCsvWriter] gives each recording. */
         const val MONITOR_CSV_PREFIX = "monitor_"
+
+        /** Prefix [GpsCsvWriter] gives each track. */
+        const val GPS_CSV_PREFIX = "gps_"
 
         // SimpleDateFormat is not thread-safe; same ThreadLocal treatment as MonitorCsvWriter.
         private val ARCHIVE_TIMESTAMP = ThreadLocal.withInitial {

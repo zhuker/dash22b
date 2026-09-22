@@ -5,7 +5,10 @@ app/build
 .DS_Store
 apks/
 
-# Local scratch, not part of the build
-example/
-logs/
-build_error.log
+# Local scratch, not part of the build. Anchored with a leading slash: an
+# unanchored "example/" matches any directory of that name at any depth, which
+# silently swallows every source file under com/example/ -- new files simply do
+# not appear in git status, while already-tracked ones keep working.
+/example/
+/logs/
+/build_error.log

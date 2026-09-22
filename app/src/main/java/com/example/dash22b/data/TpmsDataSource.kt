@@ -81,8 +81,12 @@ class TpmsDataSource(private val context: Context) {
                 results?.forEach { onScanResult(android.bluetooth.le.ScanSettings.CALLBACK_TYPE_ALL_MATCHES, it) }
             }
 
+            // A failed scan never delivers a result, so the flow is finished: close it and
+            // let the caller decide how soon to try again, rather than holding a dead scan
+            // open until the next scan cycle comes round.
             override fun onScanFailed(errorCode: Int) {
                 Timber.e("onScanFailed Scan failed: $errorCode")
+                close()
             }
         }
 
@@ -100,6 +104,7 @@ class TpmsDataSource(private val context: Context) {
             scanner.startScan(listOf(filter), settings, callback)
         } catch (e: Exception) {
             Timber.e(e, "Error starting scan")
+            close()
         }
 
         awaitClose {

@@ -23,6 +23,9 @@ object ParameterRanges {
         "Engine Speed" to RangeWithUnit(0f, 8000f, DisplayUnit.RPM),
         "RPM" to RangeWithUnit(0f, 8000f, DisplayUnit.RPM),
         "Vehicle Speed" to RangeWithUnit(0f, 250f, DisplayUnit.KMH),
+        // Same axis as Vehicle Speed on purpose: the two are meant to be read against each
+        // other, and a different scale would make speedometer error invisible.
+        "GPS Speed" to RangeWithUnit(0f, 250f, DisplayUnit.KMH),
 
         // Temperatures
         "Coolant Temperature" to RangeWithUnit(20f, 150f, DisplayUnit.C),

@@ -3,6 +3,9 @@ package com.example.dash22b.di
 import android.content.Context
 import com.example.dash22b.data.AndroidAssetLoader
 import com.example.dash22b.data.AssetLoader
+import com.example.dash22b.data.GpsParameters
+import com.example.dash22b.data.GpsRepository
+import com.example.dash22b.data.PrefsOdometerStore
 import com.example.dash22b.data.ParameterRegistry
 import com.example.dash22b.data.PresetManager
 import com.example.dash22b.data.PresetRepository
@@ -38,7 +41,11 @@ class AppContainer(context: Context) {
         // Load parameters from RomRaider XML logger definition
         // Using hardcoded EcuInit for now to support capability filtering
         val ecuInit = SsmEcuInit.createHardcoded()
-        assetLoader.open("logger_METRIC_EN_v370.xml").use { ParameterRegistry.fromXml(it, ecuInit) }
+        assetLoader.open("logger_METRIC_EN_v370.xml")
+            .use { ParameterRegistry.fromXml(it, ecuInit) }
+            // GPS speed is not an ECU parameter, but it is selectable on a gauge and
+            // graphable like one, so the picker has to be able to find it.
+            .withExtra(GpsParameters.all)
     }
 
     val tpmsRepository: TpmsRepository by lazy {
@@ -55,6 +62,12 @@ class AppContainer(context: Context) {
 
     val ssmRepository: SsmRepository by lazy {
         SsmRepository()
+    }
+
+    // Lives here rather than in DashService so the trip counter survives a service restart,
+    // and so the status bar can read it whether or not the service is up.
+    val gpsRepository: GpsRepository by lazy {
+        GpsRepository(PrefsOdometerStore(context))
     }
 
     // Lives here rather than in DashService so graph history survives a service

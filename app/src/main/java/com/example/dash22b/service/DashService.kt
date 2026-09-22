@@ -19,7 +19,14 @@ import com.example.dash22b.data.ServiceRequest
 import com.example.dash22b.data.DiagnosticDump
 import com.example.dash22b.data.ReadinessMessage
 import com.example.dash22b.data.ParameterRegistry
+import com.example.dash22b.data.EngineData
+import com.example.dash22b.data.GpsCsvWriter
+import com.example.dash22b.data.GpsParameters
+import com.example.dash22b.data.GpsRepository
+import com.example.dash22b.data.LocationSource
 import com.example.dash22b.data.MonitorCsvWriter
+import com.example.dash22b.data.ValueWithUnit
+import com.example.dash22b.data.DisplayUnit
 import com.example.dash22b.data.SsmDataSource
 import com.example.dash22b.data.SsmRepository
 import com.example.dash22b.data.TpmsDataSource
@@ -34,7 +41,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -46,6 +52,11 @@ class DashService : Service() {
     private lateinit var tpmsDataSource: TpmsDataSource
     private lateinit var tpmsRepository: TpmsRepository
 
+    // GPS
+    private lateinit var locationSource: LocationSource
+    private lateinit var gpsCsvWriter: GpsCsvWriter
+    private lateinit var gpsRepository: GpsRepository
+
     // SSM ECU
     private lateinit var ssmDataSource: SsmDataSource
     private lateinit var monitorCsvWriter: MonitorCsvWriter
@@ -55,8 +66,38 @@ class DashService : Service() {
     private lateinit var dtcRepository: DtcRepository
     private lateinit var appContainer: com.example.dash22b.di.AppContainer
 
+    // Latched on the first fix: see withGpsSpeed for why it never goes back off.
+    @Volatile
+    private var gpsColumnEnabled = false
+
+    // Location collection, started as soon as the permission is held. Null until then.
+    private var gpsJob: Job? = null
+
     // Current BLE scan cycle job — cancelled to force immediate rescan
     private var tpmsScanCycleJob: Job? = null
+
+    // Backoff between scan attempts that die on startup. Held on the service rather than
+    // inside the scan loop so that a wake-up -- the app coming forward, Bluetooth coming
+    // back on -- can drop it back to the minimum instead of serving out a 60s wait.
+    @Volatile
+    private var tpmsRetryDelayMs = SCAN_RETRY_MIN_MS
+
+    // The backoff wait itself, cancelled by a wake-up to retry now.
+    private var tpmsRetryWaitJob: Job? = null
+
+    // Registered while the service lives; see onDestroy.
+    private var bluetoothStateReceiver: android.content.BroadcastReceiver? = null
+
+    /**
+     * Retry the BLE scan now: drop the backoff and end whatever the scan loop is waiting on,
+     * whether that is a running scan cycle or a wait between failed attempts.
+     */
+    private fun wakeTpmsScan(reason: String) {
+        Timber.d("$reason — triggering immediate TPMS rescan")
+        tpmsRetryDelayMs = SCAN_RETRY_MIN_MS
+        tpmsRetryWaitJob?.cancel()
+        tpmsScanCycleJob?.cancel()
+    }
 
     // Local mutable state for TPMS
     private val currentTpmsMap = mutableMapOf<String, TpmsState>(
@@ -71,6 +112,20 @@ class DashService : Service() {
         const val NOTIFICATION_ID = 1
         const val STALE_TIMEOUT_MS = 120_000L
         const val RESCAN_DELAY_MS = 120_000L
+
+        /** A cycle shorter than RESCAN_DELAY_MS by more than this ended early, not on time. */
+        const val CYCLE_SLACK_MS = 5_000L
+
+        /** Backoff bounds for a scan that fails to start at all. */
+        const val SCAN_RETRY_MIN_MS = 5_000L
+        const val SCAN_RETRY_MAX_MS = 60_000L
+
+        /** How often a paused scan, or the driving watcher, re-checks its waking conditions. */
+        const val PAUSE_POLL_MS = 5_000L
+
+        /** Above this GPS speed the car counts as moving, whatever app is on screen. */
+        const val DRIVING_SPEED_KMH = 3f
+
         const val ACTION_EXIT = "EXIT"
         const val ACTION_FORCE_EXIT = "com.example.dash22b.ACTION_FORCE_EXIT"
     }
@@ -82,6 +137,12 @@ class DashService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+
+        // Before startForegroundService(): from Android 14 a service may only declare the
+        // location foreground type if it actually holds the permission, so the notification
+        // has to know whether GPS is available.
+        locationSource = LocationSource(this)
+
         startForegroundService()
 
         appContainer = (application as DashApplication).appContainer
@@ -92,15 +153,19 @@ class DashService : Service() {
 
         // SSM setup
         ssmRepository = appContainer.ssmRepository
+        gpsRepository = appContainer.gpsRepository
         historyStore = appContainer.historyStore
         parameterRegistry = appContainer.parameterRegistry
         ssmDataSource = SsmDataSource(this, parameterRegistry)
-        monitorCsvWriter = MonitorCsvWriter(getExternalFilesDir(null) ?: filesDir)
+        val logDirectory = getExternalFilesDir(null) ?: filesDir
+        monitorCsvWriter = MonitorCsvWriter(logDirectory)
+        gpsCsvWriter = GpsCsvWriter(logDirectory)
         dtcRepository = appContainer.dtcRepository
 
         startTpmsScanning()
         startTpmsStaleChecker()
         startSsmPolling()
+        ensureGpsLogging()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -120,6 +185,9 @@ class DashService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        // The activity restarts the service every time it resumes, which is the chance to
+        // pick up a location permission granted after the service was created.
+        ensureGpsLogging()
         return super.onStartCommand(intent, flags, startId)
     }
 
@@ -136,9 +204,10 @@ class DashService : Service() {
         // Collect engine data and push to repository
         serviceScope.launch {
             ssmDataSource.getEngineData().collect { engineData ->
-                monitorCsvWriter.record(engineData)
-                historyStore.record(engineData)
-                ssmRepository.updateEngineData(engineData)
+                val withGps = withGpsSpeed(engineData)
+                monitorCsvWriter.record(withGps)
+                historyStore.record(withGps)
+                ssmRepository.updateEngineData(withGps)
             }
         }
 
@@ -251,7 +320,72 @@ class DashService : Service() {
         }
     }
 
+    // ==================== GPS ====================
+
+    /**
+     * Records every fix to its own CSV, independent of the ECU.
+     *
+     * Deliberately not driven by the SSM polling loop: that loop emits nothing until the
+     * cable is connected and the ECU answers, so tying the track to it would lose exactly
+     * the drives where the adapter was unplugged or the engine was off.
+     */
+    private fun ensureGpsLogging() {
+        if (gpsJob != null) return
+        if (!locationSource.hasPermission()) {
+            Timber.w("Location permission not granted; no GPS track will be recorded")
+            return
+        }
+        // The service may have been created before the permission dialog was answered, in
+        // which case it started without the location foreground type. Re-declaring it now
+        // is what keeps fixes arriving once the app is in the background.
+        startForegroundService()
+        gpsJob = serviceScope.launch {
+            locationSource.fixes().collect { fix ->
+                gpsCsvWriter.record(fix)
+                gpsRepository.record(fix)
+            }
+        }
+    }
+
+    /**
+     * Adds GPS speed to an ECU sample so it can be shown on a gauge and graphed.
+     *
+     * Only speed, never position: a value is a `Float`, which resolves latitude to about a
+     * metre. Position stays in the GPS CSV as a `Double`.
+     *
+     * The column is added from the first fix onward and then never removed, because the
+     * monitor CSV starts a new file whenever the column set changes -- dropping the column
+     * on a tunnel would shred one drive into many files. No fix writes NaN instead, which
+     * reads as a gap in the graph and as a missing value in pandas, rather than as a car
+     * that stopped.
+     */
+    private fun withGpsSpeed(data: EngineData): EngineData {
+        if (data.values.isEmpty()) return data
+        if (!gpsColumnEnabled) {
+            // A fix can only exist if the permission was granted, so this doubles as the
+            // permission check without a binder call on every sample.
+            if (locationSource.latest == null) return data
+            gpsColumnEnabled = true
+            Timber.i("First GPS fix; adding ${GpsParameters.SPEED} to the monitor columns")
+        }
+        val speed = locationSource.freshFix()?.speedKmh ?: Float.NaN
+        return data.copy(
+            values = data.values + (GpsParameters.SPEED to ValueWithUnit(speed, DisplayUnit.KMH))
+        )
+    }
+
     // ==================== TPMS ====================
+
+    /**
+     * True while the car is moving under GPS, which is the case that must keep scanning
+     * whatever is on screen.
+     *
+     * Screen focus is a poor proxy for "the driver needs tyre pressures": music, navigation or
+     * a call takes the dash off screen mid-drive, and the sensors then go stale on the slower
+     * background scan -- which used to stop the scan outright until the app came back.
+     */
+    private fun isDriving(): Boolean =
+        (locationSource.freshFix()?.speedKmh ?: 0f) > DRIVING_SPEED_KMH
 
     private fun startTpmsScanning() {
         val app = application as DashApplication
@@ -263,21 +397,30 @@ class DashService : Service() {
                         currentTpmsMap.values.all { it.isStale }
                 }
 
-                if (allStale && !app.isInForeground.value) {
-                    Timber.d("TPMS sensors stale, app in background — pausing BLE scan")
-                    app.isInForeground.first { it }
-                    Timber.d("App foregrounded — resuming BLE scan")
+                if (allStale && !app.isInForeground.value && !isDriving()) {
+                    Timber.d("TPMS sensors stale, app in background and parked — pausing BLE scan")
+                    // Either waking condition ends the pause; polling beats combining flows
+                    // here because driving state is read from the latest fix, not collected.
+                    while (isActive && !app.isInForeground.value && !isDriving()) {
+                        delay(PAUSE_POLL_MS)
+                    }
+                    Timber.d("Resuming BLE scan (foreground=${app.isInForeground.value}, driving=${isDriving()})")
                 }
 
-                val scanMode = if (app.isInForeground.value)
+                // Driving keeps the scan alive (see the pause above) but does not raise its
+                // rate: pressure changes over minutes, and LOW_LATENCY means scanning
+                // continuously, which competes hardest with Bluetooth audio for the radio.
+                val fullRate = app.isInForeground.value
+                val scanMode = if (fullRate)
                     android.bluetooth.le.ScanSettings.SCAN_MODE_LOW_LATENCY
                 else
                     android.bluetooth.le.ScanSettings.SCAN_MODE_BALANCED
 
-                Timber.d("Starting BLE scan (mode=${if (scanMode == android.bluetooth.le.ScanSettings.SCAN_MODE_LOW_LATENCY) "LOW_LATENCY" else "BALANCED"})")
+                Timber.d("Starting BLE scan (mode=${if (fullRate) "LOW_LATENCY" else "BALANCED"}, driving=${isDriving()})")
 
                 // Run one scan cycle — collected into tpmsScanCycleJob so foreground
                 // transitions can cancel it to force an immediate restart
+                val cycleStart = android.os.SystemClock.elapsedRealtime()
                 tpmsScanCycleJob = launch {
                     val scanJob = launch {
                         tpmsDataSource.getTpmsUpdates(scanMode)
@@ -290,11 +433,33 @@ class DashService : Service() {
                             }
                     }
                     // Restart scan every 2 minutes to avoid Android BLE throttling
-                    delay(RESCAN_DELAY_MS)
-                    scanJob.cancel()
+                    val cycleEnd = launch {
+                        delay(RESCAN_DELAY_MS)
+                        scanJob.cancel()
+                    }
+                    // Waiting on the scan rather than the timer: a scan that dies early (no
+                    // adapter, onScanFailed) completes here, and the cycle ends with it
+                    // instead of holding a dead scanner for the rest of the two minutes.
+                    scanJob.join()
+                    cycleEnd.cancel()
                 }
                 tpmsScanCycleJob?.join()
-                Timber.d("BLE scan cycle ended")
+
+                val elapsed = android.os.SystemClock.elapsedRealtime() - cycleStart
+                if (elapsed < RESCAN_DELAY_MS - CYCLE_SLACK_MS) {
+                    val wait = tpmsRetryDelayMs
+                    Timber.d("BLE scan cycle ended early after ${elapsed}ms — retrying in ${wait}ms")
+                    // Grows while scans keep dying early, so a head unit sitting with
+                    // Bluetooth off does not spin.
+                    tpmsRetryDelayMs = (wait * 2).coerceAtMost(SCAN_RETRY_MAX_MS)
+                    // Held in a job of its own so a wake-up can cut the wait short; without
+                    // that, Bluetooth coming back on would still wait out a full minute.
+                    tpmsRetryWaitJob = launch { delay(wait) }
+                    tpmsRetryWaitJob?.join()
+                } else {
+                    Timber.d("BLE scan cycle ended")
+                    tpmsRetryDelayMs = SCAN_RETRY_MIN_MS
+                }
             }
         }
 
@@ -304,11 +469,34 @@ class DashService : Service() {
             var wasForeground = app.isInForeground.value
             app.isInForeground.collect { foreground ->
                 if (foreground && !wasForeground) {
-                    Timber.d("Foreground transition — triggering immediate TPMS rescan")
-                    tpmsScanCycleJob?.cancel()
+                    wakeTpmsScan("Foreground transition")
                 }
                 wasForeground = foreground
             }
+        }
+
+        // Nothing in the scan loop can tell an adapter that is off from one that is about to
+        // come back, so without this the first scan after Bluetooth is re-enabled waits out
+        // the backoff -- up to a minute of "Scanning..." with the app open.
+        bluetoothStateReceiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                val state = intent?.getIntExtra(
+                    android.bluetooth.BluetoothAdapter.EXTRA_STATE,
+                    android.bluetooth.BluetoothAdapter.ERROR
+                )
+                if (state == android.bluetooth.BluetoothAdapter.STATE_ON) {
+                    wakeTpmsScan("Bluetooth enabled")
+                }
+            }
+        }.also {
+            // Explicit export flag: required from Android 14 for context-registered
+            // receivers. A system broadcast is still delivered to a non-exported one.
+            androidx.core.content.ContextCompat.registerReceiver(
+                this,
+                it,
+                android.content.IntentFilter(android.bluetooth.BluetoothAdapter.ACTION_STATE_CHANGED),
+                androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
+            )
         }
     }
 
@@ -373,11 +561,18 @@ class DashService : Service() {
         val notification = buildNotification("Initializing...")
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE else 0
-            )
+            var types = 0
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+            }
+            // The location type is what keeps fixes coming while the app is backgrounded,
+            // and it is claimed only when the permission is actually held: Android 14
+            // rejects a declared type the service has no permission for, which would kill
+            // the whole service rather than just GPS.
+            if (locationSource.hasPermission()) {
+                types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            }
+            startForeground(NOTIFICATION_ID, notification, types)
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
@@ -427,6 +622,21 @@ class DashService : Service() {
     override fun onDestroy() {
         if (::monitorCsvWriter.isInitialized) {
             monitorCsvWriter.close()
+        }
+        if (::gpsCsvWriter.isInitialized) {
+            gpsCsvWriter.close()
+        }
+        if (::gpsRepository.isInitialized) {
+            // The odometer is only written every hundred metres; this keeps the last part.
+            gpsRepository.persist()
+        }
+        bluetoothStateReceiver?.let {
+            try {
+                unregisterReceiver(it)
+            } catch (e: IllegalArgumentException) {
+                // Never registered, e.g. onCreate failed before startTpmsScanning().
+            }
+            bluetoothStateReceiver = null
         }
         serviceScope.cancel()
         super.onDestroy()
