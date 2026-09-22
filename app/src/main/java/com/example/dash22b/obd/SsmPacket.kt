@@ -26,7 +26,12 @@ data class SsmPacket(
         const val CMD_WRITE_ADDRESS: Byte = 0xB8.toByte()
         const val RSP_READ_ADDRESS: Byte = 0xE8.toByte()
         const val RSP_WRITE_ADDRESS: Byte = 0xF8.toByte()
-        
+
+        // Padding byte after CMD_READ_ADDRESS. 0x01 asks the ECU to keep streaming the
+        // response until the line is broken (fast poll); 0x00 answers once.
+        const val READ_ADDRESS_ONCE: Byte = 0x00
+        const val READ_ADDRESS_CONTINUOUS: Byte = 0x01
+
         /**
          * Creates an ECU/TCU init request packet.
          * @param target 1 for ECU, 2 for TCU

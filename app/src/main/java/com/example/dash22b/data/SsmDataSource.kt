@@ -35,7 +35,22 @@ class SsmDataSource(private val context: Context,
 
     companion object {
         const val TAG = "SsmDataSource"
-        private const val POLL_DELAY_MS = 50L  // Target ~20Hz
+        // Pause between loop passes when nothing is streaming: idle (no subscriptions),
+        // single-read fallback, and after a failed read. Never used while fast-polling --
+        // the ECU keeps sending while we sleep, and unread frames back up in the cable's
+        // FIFO until it overflows (docs/ssm_fastpoll_plan.md, gotcha 5). There the
+        // blocking read is the pacing.
+        private const val IDLE_POLL_DELAY_MS = 50L
+
+        // Fast poll (SSM continuous read) for gauge reads. After this many failed fast
+        // reads in a row, fall back to single reads until the next reconnect rather than
+        // stall the gauges.
+        private const val FAST_POLL_ENABLED = true
+        private const val FAST_POLL_MAX_FAILURES = 3
+
+        // How often the poll loop writes its health line (rate, mode, stream restarts)
+        // to the log, so a drive can be judged afterwards from the log file alone.
+        private const val POLL_STATS_INTERVAL_MS = 60_000L
 
         // Settling time when handing the K-line between the SSM and generic OBD-II
         // stacks. The two run at different baud rates on the same pin, so the wire needs
@@ -405,6 +420,26 @@ class SsmDataSource(private val context: Context,
     }
 
     /**
+     * One log line summarising the last stats window, e.g.
+     * `Poll: fast, 13 params/16 addr, 1302 samples in 60.0 s = 21.7 Hz, 0 failed reads;
+     * stream: 1 start, 0 bad frames, 0 replays, 0 unrecoverable`.
+     * The rate is over wall-clock time, so a DTC read or OBD-II takeover inside the window
+     * pulls it down; the stream counters stay at zero while in slow mode.
+     */
+    private fun logPollStats(windowMs: Long, fast: Boolean, params: Int, addresses: Int,
+                             samples: Int, failedReads: Int) {
+        val s = serialManager.takeFastPollStats()
+        val seconds = windowMs / 1000.0
+        Timber.tag(TAG).i(
+            "Poll: %s, %d params/%d addr, %d samples in %.1f s = %.1f Hz, %d failed reads; " +
+                "stream: %d start%s, %d bad frames, %d replays, %d unrecoverable",
+            if (fast) "fast" else "slow", params, addresses, samples, seconds,
+            if (seconds > 0) samples / seconds else 0.0, failedReads,
+            s.streamStarts, if (s.streamStarts == 1) "" else "s", s.badFrames, s.replays, s.failures
+        )
+    }
+
+    /**
      * Returns a Flow that continuously polls the ECU for real-time data.
      * Handles connection retry with exponential backoff.
      */
@@ -433,6 +468,11 @@ class SsmDataSource(private val context: Context,
             }
 
             var consecutiveErrors = 0
+            var useFastPoll = FAST_POLL_ENABLED
+            var fastPollFailures = 0
+            var statsWindowStart = System.currentTimeMillis()
+            var windowSamples = 0
+            var windowFailedReads = 0
             while (true) {
                 try {
                     // Check for pending DTC read request (must be serviced from this thread)
@@ -514,17 +554,31 @@ class SsmDataSource(private val context: Context,
                     val parametersToRead = getParametersToRead()
 
                     if (parametersToRead.isEmpty()) {
-                        // No parameters subscribed - wait and check again
-                        delay(POLL_DELAY_MS)
+                        // No parameters subscribed - wait and check again. Nobody reads a
+                        // stream while idle, so stop it rather than let the FIFO overflow.
+                        serialManager.stopStreaming()
+                        delay(IDLE_POLL_DELAY_MS)
                         continue
                     }
 
-                    val response = serialManager.readParameters(parametersToRead)
+                    val response = if (useFastPoll) {
+                        serialManager.readParametersFast(parametersToRead)
+                    } else {
+                        serialManager.readParameters(parametersToRead)
+                    }
                     if (response != null) {
                         val engineData = parseResponse(response, parametersToRead) ?: EngineData()
                         emit(engineData)
                         consecutiveErrors = 0  // Reset error counter on success
+                        fastPollFailures = 0
+                        windowSamples++
                     } else {
+                        windowFailedReads++
+                        if (useFastPoll && ++fastPollFailures >= FAST_POLL_MAX_FAILURES) {
+                            Timber.tag(TAG).w("Fast poll failed $fastPollFailures times in a row, falling back to single reads")
+                            serialManager.stopStreaming()
+                            useFastPoll = false
+                        }
                         consecutiveErrors++
                         if (consecutiveErrors >= 3) {
                             Timber.tag(TAG).w("Multiple read failures, checking connection")
@@ -541,6 +595,8 @@ class SsmDataSource(private val context: Context,
                                         val initResponse = serialManager.sendInit(1)
                                         if (initResponse != null) {
                                             Timber.tag(TAG).i("Reconnected to ECU")
+                                            useFastPoll = FAST_POLL_ENABLED
+                                            fastPollFailures = 0
                                             break
                                         }
                                         serialManager.disconnect()
@@ -552,7 +608,19 @@ class SsmDataSource(private val context: Context,
                         }
                     }
 
-                    delay(POLL_DELAY_MS)
+                    val now = System.currentTimeMillis()
+                    if (now - statsWindowStart >= POLL_STATS_INTERVAL_MS) {
+                        logPollStats(now - statsWindowStart, useFastPoll, parametersToRead.size,
+                            parametersToRead.sumOf { it.length }, windowSamples, windowFailedReads)
+                        statsWindowStart = now
+                        windowSamples = 0
+                        windowFailedReads = 0
+                    }
+
+                    // No sleep after a good fast read: see IDLE_POLL_DELAY_MS.
+                    if (!useFastPoll || response == null) {
+                        delay(IDLE_POLL_DELAY_MS)
+                    }
 
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
@@ -571,6 +639,8 @@ class SsmDataSource(private val context: Context,
                                 val initResponse = serialManager.sendInit(1)
                                 if (initResponse != null) {
                                     Timber.tag(TAG).i("Reconnected to ECU")
+                                    useFastPoll = FAST_POLL_ENABLED
+                                    fastPollFailures = 0
                                     break
                                 }
                                 serialManager.disconnect()
