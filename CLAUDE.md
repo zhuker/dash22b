@@ -26,7 +26,12 @@ no signing config and would come out unsigned.
 
 Version identity lives in **git tags**, not in `build.gradle.kts`. `app/build.gradle.kts`
 shells out to `git describe --tags --dirty` at configure time and feeds `versionName`,
-`versionCode` (commit count) and a few `BuildConfig` fields. Never hardcode a version.
+`versionCode` and a few `BuildConfig` fields. Never hardcode a version.
+
+`versionCode` is `major*100_000_000 + minor*1_000_000 + patch*10_000 + commits since the
+tag` (v0.6.1 = 6_010_000), not the total commit count. Squash merges make the commit count
+go *down* on main relative to the branch builds, and Android refuses to install a lower
+versionCode ("package appears to be invalid"). Tags must fit: major <= 20, minor/patch <= 99.
 
 - Release build (HEAD exactly on a clean tag): `0.3.0-fuel-calibration`, `IS_RELEASE_BUILD = true`.
 - Anything else: `0.3.0-fuel-calibration-1-g4798128-dirty`, `IS_RELEASE_BUILD = false`.
