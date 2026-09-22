@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.dp
  * How much history the graphs show.
  *
  * [ALL] spans everything the HistoryStore still holds, which is bounded by its ring
- * capacity (~20 min) rather than by the whole drive.
+ * capacity (~20-27 min at fast-poll rates) rather than by the whole drive.
  */
 enum class GraphWindow(val label: String, val durationMs: Long?) {
     ALL("All", null),
